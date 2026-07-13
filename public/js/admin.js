@@ -164,6 +164,32 @@ async function fetchConfig() {
     document.getElementById('streamerDescription').value = currentConfig.streamerDescription || '';
     document.getElementById('viewerAccentColor').value = currentConfig.viewerAccentColor || '#8a2be2';
 
+    // EasySlip UI restrictions (Only platform owner admin configures the key)
+    const isOwner = (currentUsername === 'admin');
+    const ownerApiKeyGroup = document.getElementById('ownerApiKeyGroup');
+    const streamerApiKeyStatus = document.getElementById('streamerApiKeyStatus');
+    
+    if (!isOwner) {
+      if (ownerApiKeyGroup) ownerApiKeyGroup.style.display = 'none';
+      if (streamerApiKeyStatus) {
+        streamerApiKeyStatus.style.display = 'block';
+        if (currentConfig.isPlatformSlipEnabled) {
+          streamerApiKeyStatus.innerHTML = '✅ <strong>ระบบสแกนสลิปพร้อมใช้งาน:</strong> เจ้าของระบบได้เปิดใช้งาน EasySlip สำหรับตรวจสลิปจริงเรียบร้อยแล้ว คุณสามารถเปิดใช้งานโหมดสลิปจริงได้ทันที';
+          streamerApiKeyStatus.style.borderColor = 'rgba(0, 255, 135, 0.2)';
+          streamerApiKeyStatus.style.background = 'rgba(0, 255, 135, 0.08)';
+          streamerApiKeyStatus.style.color = '#00ff87';
+        } else {
+          streamerApiKeyStatus.innerHTML = '⚠️ <strong>ระบบตรวจสลิปจริงยังไม่พร้อมใช้งาน:</strong> รอเจ้าของระบบเปิดใช้คีย์ตรวจสอบสลิปส่วนกลาง (ปัจจุบันใช้งานได้เฉพาะโหมดจำลอง)';
+          streamerApiKeyStatus.style.borderColor = 'rgba(255, 0, 127, 0.2)';
+          streamerApiKeyStatus.style.background = 'rgba(255, 0, 127, 0.08)';
+          streamerApiKeyStatus.style.color = '#ff3366';
+        }
+      }
+    } else {
+      if (ownerApiKeyGroup) ownerApiKeyGroup.style.display = 'block';
+      if (streamerApiKeyStatus) streamerApiKeyStatus.style.display = 'none';
+    }
+
     // Populate Advanced settings form
     document.getElementById('requireApproval').checked = !!currentConfig.requireApproval;
     document.getElementById('minAmountTts').value = currentConfig.minAmountTts || 1;

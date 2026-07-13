@@ -758,10 +758,15 @@ app.get('/api/auth/me', async (req, res) => {
 app.get('/api/config', async (req, res) => {
   const targetUsername = req.query.username;
   const configs = await dbGetConfigs();
+  const users = await dbGetUsers();
+
+  // Find the platform owner's config to check if slip checking is enabled globally
+  const adminUser = users.find(u => u.username === 'admin');
+  const adminConfig = adminUser ? configs.find(c => c.userId === adminUser.id) : null;
+  const isPlatformSlipEnabled = !!(adminConfig && adminConfig.easyslipApiKey);
   
   if (targetUsername) {
     // Public fetch scoped config by username (Viewer or OBS Overlay queries)
-    const users = await dbGetUsers();
     const user = users.find(u => u.username.toLowerCase() === targetUsername.trim().toLowerCase());
     if (!user) {
       return res.status(404).json({ error: 'Streamer not found' });
@@ -773,6 +778,7 @@ app.get('/api/config', async (req, res) => {
     const publicConfig = Object.assign({}, config);
     delete publicConfig.easyslipApiKey;
     publicConfig.userId = user.id;
+    publicConfig.isPlatformSlipEnabled = isPlatformSlipEnabled;
     return res.json(publicConfig);
   }
 
@@ -784,7 +790,18 @@ app.get('/api/config', async (req, res) => {
     config = makeDefaultConfig(req.session.userId);
     await dbSaveConfig(config);
   }
-  res.json(config);
+
+  // Send indicator of global slip check status to dashboard UI
+  const clientConfig = Object.assign({}, config);
+  clientConfig.isPlatformSlipEnabled = isPlatformSlipEnabled;
+  
+  // Protect streamer accounts from seeing owner's secret key
+  const loggedUser = users.find(u => u.id === req.session.userId);
+  if (loggedUser && loggedUser.role !== 'admin') {
+    delete clientConfig.easyslipApiKey;
+  }
+  
+  res.json(clientConfig);
 });
 
 app.post('/api/config', async (req, res) => {
@@ -797,6 +814,10 @@ app.post('/api/config', async (req, res) => {
     return res.status(404).json({ error: 'Config entity not found' });
   }
 
+  const users = await dbGetUsers();
+  const user = users.find(u => u.id === req.session.userId);
+  const isOwner = (user && user.role === 'admin');
+
   const { 
     promptpayId, verifyMode, easyslipApiKey, streamerName, streamerDescription,
     bannedWords, requireApproval, minAmountTts, minDonateAmount, ttsSpeed, ttsPitch, soundVolume,
@@ -808,7 +829,8 @@ app.post('/api/config', async (req, res) => {
   const updatedConfig = Object.assign({}, config, {
     promptpayId: promptpayId || config.promptpayId,
     verifyMode: verifyMode || config.verifyMode,
-    easyslipApiKey: easyslipApiKey !== undefined ? easyslipApiKey : config.easyslipApiKey,
+    // Only the platform owner can update/save the EasySlip key
+    easyslipApiKey: isOwner ? (easyslipApiKey !== undefined ? easyslipApiKey : config.easyslipApiKey) : config.easyslipApiKey,
     streamerName: streamerName || config.streamerName,
     streamerDescription: streamerDescription !== undefined ? streamerDescription : config.streamerDescription,
     bannedWords: bannedWords !== undefined ? bannedWords : config.bannedWords,
@@ -1036,7 +1058,12 @@ app.post('/api/verify', async (req, res) => {
     return res.status(400).json({ error: 'สลิปนี้ถูกใช้ไปแล้ว (Duplicate Slip QR Code)' });
   }
   
-  if (!config.easyslipApiKey) {
+  // Retrieve the global Platform Owner API Key
+  const adminUser = users.find(u => u.username === 'admin');
+  const adminConfig = adminUser ? configs.find(c => c.userId === adminUser.id) : null;
+  const activeApiKey = adminConfig ? adminConfig.easyslipApiKey : '';
+
+  if (!activeApiKey) {
     if (qrData.startsWith('0046')) {
       donation.slipQrData = qrData;
       donation.transRef = 'MOCK_REF_' + Date.now();
@@ -1048,7 +1075,7 @@ app.post('/api/verify', async (req, res) => {
       
       return res.json({ success: true, message: 'ตรวจสลิปทดสอบสำเร็จ', donation });
     }
-    return res.status(400).json({ error: 'ตั้งค่า API Key ของ EasySlip ไม่ครบถ้วน' });
+    return res.status(400).json({ error: 'เจ้าของระบบยังไม่ได้ตั้งค่าคีย์ตรวจสอบสลิป (EasySlip API Key)' });
   }
   
   try {
@@ -1057,7 +1084,7 @@ app.post('/api/verify', async (req, res) => {
       { payload: qrData, matchAmount: donation.amount },
       {
         headers: {
-          'Authorization': `Bearer ${config.easyslipApiKey}`,
+          'Authorization': `Bearer ${activeApiKey}`,
           'Content-Type': 'application/json'
         }
       }
