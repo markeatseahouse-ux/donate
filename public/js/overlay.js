@@ -6,14 +6,9 @@ let audioUnlocked = false;
 // Audio context variable
 let audioCtx = null;
 
-// Speech voices
-let voiceTh = null;
-let voiceEn = null;
-
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   initSocket();
-  initVoices();
 });
 
 // Init socket client
@@ -39,6 +34,7 @@ function unlockAudio() {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     audioCtx = new AudioContext();
     
+    // Play quick silent buffer to unlock browser audio context
     const buffer = audioCtx.createBuffer(1, 1, 22050);
     const source = audioCtx.createBufferSource();
     source.buffer = buffer;
@@ -47,41 +43,11 @@ function unlockAudio() {
     
     audioUnlocked = true;
     
-    const u = new SpeechSynthesisUtterance('');
-    window.speechSynthesis.speak(u);
-    
+    // Hide activator
     document.getElementById('audio-activator').style.display = 'none';
     console.log('Audio unlocked successfully');
   } catch (e) {
     console.error('Failed to unlock audio context', e);
-  }
-}
-
-// Setup Speech voices
-function initVoices() {
-  const loadVoices = () => {
-    const voices = window.speechSynthesis.getVoices();
-    
-    // Find Thai voice (usually Pattara, Premwadee, or Google th-TH)
-    voiceTh = voices.find(v => v.lang.startsWith('th') || v.name.includes('Thai') || v.name.includes('Pattara') || v.name.includes('Premwadee'));
-    
-    // Find English voice
-    voiceEn = voices.find(v => v.lang.startsWith('en') || v.name.includes('English') || v.name.includes('Google US English'));
-    
-    // Fallbacks
-    if (!voiceTh && voices.length > 0) {
-      // Check if any voice is Thai
-      const thVoice = voices.find(v => v.lang.toLowerCase().includes('th'));
-      if (thVoice) voiceTh = thVoice;
-    }
-    if (!voiceEn && voices.length > 0) voiceEn = voices.find(v => v.lang.startsWith('en')) || voices[0];
-    
-    console.log('TTS Voices initialized - TH:', voiceTh?.name, 'EN:', voiceEn?.name);
-  };
-  
-  loadVoices();
-  if (window.speechSynthesis.onvoiceschanged !== undefined) {
-    window.speechSynthesis.onvoiceschanged = loadVoices;
   }
 }
 
@@ -182,83 +148,62 @@ function processNextAlert() {
   });
 }
 
-// Text-to-Speech playback engine with Google Translate TTS fallback
-function speakText(text, lang, callback) {
-  const synth = window.speechSynthesis;
-  
-  // Check if we should use Google Translate TTS online fallback for Thai
-  // If voiceTh is missing, or is not a real Thai voice, we fall back to Google Translate Audio Stream!
-  const isThaiVoiceAvailable = voiceTh && voiceTh.lang.toLowerCase().includes('th');
-  
-  if (lang === 'th' && !isThaiVoiceAvailable) {
-    console.log('[TTS] No local Thai speech engine found. Using Google Translate TTS Online Fallback Proxy.');
-    const url = `/api/tts?lang=th&text=${encodeURIComponent(text)}`;
-    const audio = new Audio(url);
-    
-    audio.onended = () => callback();
-    audio.onerror = (e) => {
-      console.error('[TTS] Google Translate fallback audio failed:', e);
-      callback(); // Continue to next queue item
-    };
-    
-    audio.play().catch(err => {
-      console.error('[TTS] Audio playback failed (possibly blocked by browser autoplay rules):', err);
-      callback();
-    });
-    return;
-  }
-  
-  // Standard Web Speech API Synthesis
-  if (!synth) {
-    console.warn('[TTS] Web Speech API not supported in this browser');
-    callback();
-    return;
-  }
-  
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.voice = lang === 'th' ? voiceTh : voiceEn;
-  utterance.rate = lang === 'th' ? 1.0 : 0.95;
-  utterance.pitch = lang === 'th' ? 1.05 : 1.0;
-  
-  utterance.onend = () => callback();
-  utterance.onerror = (e) => {
-    console.error('[TTS] Web Speech Synthesis error:', e);
-    callback();
-  };
-  
-  synth.speak(utterance);
-}
-
-// Speak the alert name + amount + message
+// Play speech alert sequentially using HTML5 Audio via proxy
 function speakAlert(alert, callback) {
-  const synth = window.speechSynthesis;
-  if (synth) {
-    synth.cancel(); // Clear any hung speech
-  }
-  
   const introText = `คุณ ${alert.name} ส่งสนับสนุน จำนวน ${Math.floor(alert.amount)} บาท`;
+  const introUrl = `/api/tts?lang=th&text=${encodeURIComponent(introText)}`;
   
-  // Safety timeout in case speech engine gets stuck
+  console.log('[TTS] Playing intro:', introText);
+  const audioIntro = new Audio(introUrl);
+  
+  // Safety timeout in case speech engine gets stuck (25 seconds limit)
   let safetyTimeout = setTimeout(() => {
     console.warn('[TTS] Safety timeout triggered');
-    if (synth) synth.cancel();
+    audioIntro.pause();
     callback();
-  }, 20000); // 20 seconds maximum per alert
+  }, 25000);
 
-  // 1. Speak Intro (in Thai)
-  speakText(introText, 'th', () => {
-    // 2. Speak Message if present
+  audioIntro.onended = () => {
+    // If there is a message, play it next
     if (alert.message) {
       setTimeout(() => {
-        const msgLang = hasThai(alert.message) ? 'th' : 'en';
-        speakText(alert.message, msgLang, () => {
+        const lang = hasThai(alert.message) ? 'th' : 'en';
+        const msgUrl = `/api/tts?lang=${lang}&text=${encodeURIComponent(alert.message)}`;
+        console.log('[TTS] Playing message:', alert.message);
+        
+        const audioMsg = new Audio(msgUrl);
+        audioMsg.onended = () => {
+          clearTimeout(safetyTimeout);
+          callback();
+        };
+        audioMsg.onerror = (e) => {
+          console.error('[TTS] Message playback error:', e);
+          clearTimeout(safetyTimeout);
+          callback();
+        };
+        audioMsg.play().catch(err => {
+          console.error('[TTS] Message play failed:', err);
           clearTimeout(safetyTimeout);
           callback();
         });
-      }, 300);
+      }, 350); // Small natural delay between intro and message
     } else {
+      // No message, wrap up
       clearTimeout(safetyTimeout);
       callback();
     }
+  };
+  
+  audioIntro.onerror = (e) => {
+    console.error('[TTS] Intro playback error:', e);
+    clearTimeout(safetyTimeout);
+    callback();
+  };
+  
+  // Play the intro speech
+  audioIntro.play().catch(err => {
+    console.error('[TTS] Intro play failed (unlocked check needed):', err);
+    clearTimeout(safetyTimeout);
+    callback();
   });
 }
