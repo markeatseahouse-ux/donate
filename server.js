@@ -8,6 +8,7 @@ const axios = require('axios');
 const generatePayload = require('promptpay-qr');
 const bcrypt = require('bcryptjs');
 const cookieSession = require('cookie-session');
+const { Pool } = require('pg');
 
 const app = express();
 const server = http.createServer(app);
@@ -55,7 +56,7 @@ app.get('/admin.html', (req, res, next) => {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Data Helpers
+// Local JSON File Sync Handlers (Fallback Mode)
 function loadUsers() {
   if (!fs.existsSync(USERS_PATH)) fs.writeFileSync(USERS_PATH, JSON.stringify([]));
   return JSON.parse(fs.readFileSync(USERS_PATH, 'utf8') || '[]');
@@ -112,14 +113,351 @@ function makeDefaultConfig(userId) {
   };
 }
 
-// Automatic Migration helper (Imports legacy single-user config.json and donations.json)
-(function migrateLegacyData() {
+// --- DATABASE HYBRID LAYER ADAPTERS ---
+let pool = null;
+let useDb = false;
+
+if (process.env.DATABASE_URL) {
+  console.log('[Database] DATABASE_URL environment variable detected. Enabling cloud PostgreSQL.');
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+      rejectUnauthorized: false
+    }
+  });
+  useDb = true;
+  initDbSchema();
+} else {
+  console.log('[Database] No DATABASE_URL found. Running locally on JSON file storage.');
+}
+
+async function initDbSchema() {
+  try {
+    const client = await pool.connect();
+    
+    // Create Users Schema
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id VARCHAR(50) PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        role VARCHAR(20) NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    // Create Configs Schema
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS configs (
+        user_id VARCHAR(50) PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        promptpay_id VARCHAR(50) NOT NULL,
+        verify_mode VARCHAR(20) NOT NULL,
+        easyslip_api_key VARCHAR(255),
+        streamer_name VARCHAR(100) NOT NULL,
+        streamer_description TEXT,
+        banned_words TEXT,
+        require_approval BOOLEAN DEFAULT FALSE,
+        min_amount_tts NUMERIC DEFAULT 1,
+        min_donate_amount NUMERIC DEFAULT 1,
+        tts_speed NUMERIC DEFAULT 1.0,
+        tts_pitch NUMERIC DEFAULT 1.0,
+        sound_volume NUMERIC DEFAULT 0.8,
+        overlay_accent_color VARCHAR(10) DEFAULT '#ff007f',
+        overlay_text_color VARCHAR(10) DEFAULT '#ffffff',
+        alert_animation VARCHAR(20) DEFAULT 'slide',
+        alert_sound_file VARCHAR(255),
+        goal_enabled BOOLEAN DEFAULT FALSE,
+        goal_title VARCHAR(255),
+        goal_target NUMERIC DEFAULT 5000,
+        goal_current NUMERIC DEFAULT 0,
+        viewer_accent_color VARCHAR(10) DEFAULT '#8a2be2',
+        viewer_banner_file VARCHAR(255)
+      )
+    `);
+    
+    // Create Donations Schema
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS donations (
+        id VARCHAR(50) PRIMARY KEY,
+        user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+        name VARCHAR(100) NOT NULL,
+        message TEXT,
+        amount NUMERIC NOT NULL,
+        status VARCHAR(20) NOT NULL,
+        qr_payload TEXT,
+        slip_qr_data TEXT,
+        trans_ref VARCHAR(100),
+        sender_name VARCHAR(100),
+        verification_method VARCHAR(50),
+        is_simulation BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        paid_at TIMESTAMP WITH TIME ZONE,
+        approved_at TIMESTAMP WITH TIME ZONE,
+        rejected_at TIMESTAMP WITH TIME ZONE
+      )
+    `);
+    
+    client.release();
+    console.log('[Database] PostgreSQL schemas initialized successfully.');
+    
+    // Auto-migrate local JSON file database into PostgreSQL if empty
+    await migrateJsonToPostgres();
+  } catch (err) {
+    console.error('[Database] Failed to initialize DB schemas:', err.message);
+  }
+}
+
+async function migrateJsonToPostgres() {
+  try {
+    const usersCountRes = await pool.query('SELECT COUNT(*) FROM users');
+    const dbUsersCount = parseInt(usersCountRes.rows[0].count);
+    
+    if (dbUsersCount === 0) {
+      const localUsers = loadUsers();
+      if (localUsers.length > 0) {
+        console.log(`[Database Migration] DB is empty but found ${localUsers.length} local JSON users. Migrating...`);
+        
+        // Migrate Users
+        for (const u of localUsers) {
+          await pool.query(
+            'INSERT INTO users (id, username, password_hash, role, created_at) VALUES ($1, $2, $3, $4, $5)',
+            [u.id, u.username, u.passwordHash, u.role, u.createdAt]
+          );
+        }
+        
+        // Migrate Configs
+        const localConfigs = loadConfigs();
+        for (const c of localConfigs) {
+          await pool.query(`
+            INSERT INTO configs (
+              user_id, promptpay_id, verify_mode, easyslip_api_key, streamer_name, streamer_description,
+              banned_words, require_approval, min_amount_tts, min_donate_amount, tts_speed, tts_pitch,
+              sound_volume, overlay_accent_color, overlay_text_color, alert_animation, alert_sound_file,
+              goal_enabled, goal_title, goal_target, goal_current, viewer_accent_color, viewer_banner_file
+            ) VALUES (
+              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
+            )
+          `, [
+            c.userId, c.promptpayId, c.verifyMode, c.easyslipApiKey, c.streamerName, c.streamerDescription,
+            c.bannedWords, c.requireApproval, c.minAmountTts, c.minDonateAmount, c.ttsSpeed, c.ttsPitch,
+            c.soundVolume, c.overlayAccentColor, c.overlayTextColor, c.alertAnimation, c.alertSoundFile,
+            c.goalEnabled, c.goalTitle, c.goalTarget, c.goalCurrent, c.viewerAccentColor, c.viewerBannerFile
+          ]);
+        }
+        
+        // Migrate Donations
+        const localDonations = loadDonations();
+        for (const d of localDonations) {
+          await pool.query(`
+            INSERT INTO donations (
+              id, user_id, name, message, amount, status, qr_payload, slip_qr_data, trans_ref,
+              sender_name, verification_method, is_simulation, created_at, paid_at, approved_at, rejected_at
+            ) VALUES (
+              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+            )
+          `, [
+            d.id, d.userId, d.name, d.message, d.amount, d.status, d.qrPayload, d.slipQrData, d.transRef,
+            d.senderName, d.verificationMethod, d.isSimulation || false, d.createdAt, d.paidAt, d.approvedAt, d.rejectedAt
+          ]);
+        }
+        
+        console.log('[Database Migration] All local JSON data successfully migrated to PostgreSQL cloud!');
+      }
+    }
+  } catch (err) {
+    console.error('[Database Migration] Error during migration:', err.message);
+  }
+}
+
+// PostgreSQL Mapper Helpers
+function mapConfigFromDb(row) {
+  if (!row) return null;
+  return {
+    userId: row.user_id,
+    promptpayId: row.promptpay_id,
+    verifyMode: row.verify_mode,
+    easyslipApiKey: row.easyslip_api_key,
+    streamerName: row.streamer_name,
+    streamerDescription: row.streamer_description,
+    bannedWords: row.banned_words,
+    requireApproval: row.require_approval,
+    minAmountTts: Number(row.min_amount_tts),
+    minDonateAmount: Number(row.min_donate_amount),
+    ttsSpeed: Number(row.tts_speed),
+    ttsPitch: Number(row.tts_pitch),
+    soundVolume: Number(row.sound_volume),
+    overlayAccentColor: row.overlay_accent_color,
+    overlayTextColor: row.overlay_text_color,
+    alertAnimation: row.alert_animation,
+    alertSoundFile: row.alert_sound_file,
+    goalEnabled: row.goal_enabled,
+    goalTitle: row.goal_title,
+    goalTarget: Number(row.goal_target),
+    goalCurrent: Number(row.goal_current),
+    viewerAccentColor: row.viewer_accent_color,
+    viewerBannerFile: row.viewer_banner_file
+  };
+}
+
+function mapDonationFromDb(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    userId: r.user_id,
+    name: r.name,
+    message: r.message,
+    amount: Number(r.amount),
+    status: r.status,
+    qrPayload: r.qr_payload,
+    slipQrData: r.slip_qr_data,
+    transRef: r.trans_ref,
+    senderName: r.sender_name,
+    verificationMethod: r.verification_method,
+    isSimulation: r.is_simulation,
+    createdAt: r.created_at,
+    paidAt: r.paid_at,
+    approvedAt: r.approved_at,
+    rejectedAt: r.rejected_at
+  };
+}
+
+// Async Database Access Handlers (supports transparent fallback to JSON)
+async function dbGetUsers() {
+  if (useDb) {
+    const res = await pool.query('SELECT * FROM users');
+    return res.rows.map(r => ({
+      id: r.id,
+      username: r.username,
+      passwordHash: r.password_hash,
+      role: r.role,
+      createdAt: r.created_at
+    }));
+  }
+  return loadUsers();
+}
+
+async function dbAddUser(u) {
+  if (useDb) {
+    await pool.query(
+      'INSERT INTO users (id, username, password_hash, role, created_at) VALUES ($1, $2, $3, $4, $5)',
+      [u.id, u.username, u.passwordHash, u.role, u.createdAt]
+    );
+    return;
+  }
+  const users = loadUsers();
+  users.push(u);
+  saveUsers(users);
+}
+
+async function dbGetConfigs() {
+  if (useDb) {
+    const res = await pool.query('SELECT * FROM configs');
+    return res.rows.map(mapConfigFromDb);
+  }
+  return loadConfigs();
+}
+
+async function dbSaveConfig(c) {
+  if (useDb) {
+    await pool.query(`
+      INSERT INTO configs (
+        user_id, promptpay_id, verify_mode, easyslip_api_key, streamer_name, streamer_description,
+        banned_words, require_approval, min_amount_tts, min_donate_amount, tts_speed, tts_pitch,
+        sound_volume, overlay_accent_color, overlay_text_color, alert_animation, alert_sound_file,
+        goal_enabled, goal_title, goal_target, goal_current, viewer_accent_color, viewer_banner_file
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
+      ) ON CONFLICT (user_id) DO UPDATE SET
+        promptpay_id = EXCLUDED.promptpay_id,
+        verify_mode = EXCLUDED.verify_mode,
+        easyslip_api_key = EXCLUDED.easyslip_api_key,
+        streamer_name = EXCLUDED.streamer_name,
+        streamer_description = EXCLUDED.streamer_description,
+        banned_words = EXCLUDED.banned_words,
+        require_approval = EXCLUDED.require_approval,
+        min_amount_tts = EXCLUDED.min_amount_tts,
+        min_donate_amount = EXCLUDED.min_donate_amount,
+        tts_speed = EXCLUDED.tts_speed,
+        tts_pitch = EXCLUDED.tts_pitch,
+        sound_volume = EXCLUDED.sound_volume,
+        overlay_accent_color = EXCLUDED.overlay_accent_color,
+        overlay_text_color = EXCLUDED.overlay_text_color,
+        alert_animation = EXCLUDED.alert_animation,
+        alert_sound_file = EXCLUDED.alert_sound_file,
+        goal_enabled = EXCLUDED.goal_enabled,
+        goal_title = EXCLUDED.goal_title,
+        goal_target = EXCLUDED.goal_target,
+        goal_current = EXCLUDED.goal_current,
+        viewer_accent_color = EXCLUDED.viewer_accent_color,
+        viewer_banner_file = EXCLUDED.viewer_banner_file
+    `, [
+      c.userId, c.promptpayId, c.verifyMode, c.easyslipApiKey, c.streamerName, c.streamerDescription,
+      c.bannedWords, c.requireApproval, c.minAmountTts, c.minDonateAmount, c.ttsSpeed, c.ttsPitch,
+      c.soundVolume, c.overlayAccentColor, c.overlayTextColor, c.alertAnimation, c.alertSoundFile,
+      c.goalEnabled, c.goalTitle, c.goalTarget, c.goalCurrent, c.viewerAccentColor, c.viewerBannerFile
+    ]);
+    return;
+  }
+  const configs = loadConfigs();
+  const idx = configs.findIndex(item => item.userId === c.userId);
+  if (idx !== -1) {
+    configs[idx] = c;
+  } else {
+    configs.push(c);
+  }
+  saveConfigs(configs);
+}
+
+async function dbGetDonations() {
+  if (useDb) {
+    const res = await pool.query('SELECT * FROM donations');
+    return res.rows.map(mapDonationFromDb);
+  }
+  return loadDonations();
+}
+
+async function dbSaveDonation(d) {
+  if (useDb) {
+    await pool.query(`
+      INSERT INTO donations (
+        id, user_id, name, message, amount, status, qr_payload, slip_qr_data, trans_ref,
+        sender_name, verification_method, is_simulation, created_at, paid_at, approved_at, rejected_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+      ) ON CONFLICT (id) DO UPDATE SET
+        status = EXCLUDED.status,
+        slip_qr_data = EXCLUDED.slip_qr_data,
+        trans_ref = EXCLUDED.trans_ref,
+        sender_name = EXCLUDED.sender_name,
+        verification_method = EXCLUDED.verification_method,
+        is_simulation = EXCLUDED.is_simulation,
+        paid_at = EXCLUDED.paid_at,
+        approved_at = EXCLUDED.approved_at,
+        rejected_at = EXCLUDED.rejected_at
+    `, [
+      d.id, d.userId, d.name, d.message, d.amount, d.status, d.qrPayload, d.slipQrData, d.transRef,
+      d.senderName, d.verificationMethod, d.isSimulation || false, d.createdAt, d.paidAt, d.approvedAt, d.rejectedAt
+    ]);
+    return;
+  }
+  const donations = loadDonations();
+  const idx = donations.findIndex(item => item.id === d.id);
+  if (idx !== -1) {
+    donations[idx] = d;
+  } else {
+    donations.push(d);
+  }
+  saveDonations(donations);
+}
+
+// Automatic Legacy migration on Server Boot
+(async function migrateLegacyData() {
   const legacyConfigPath = path.join(__dirname, 'config.json');
   const legacyDonationsPath = path.join(__dirname, 'donations.json');
   
   if (fs.existsSync(legacyConfigPath)) {
     console.log('[Migration] Legacy config file detected. Starting data migration...');
-    const users = loadUsers();
+    const users = await dbGetUsers();
     
     // Check if we already migrated
     if (users.length === 0) {
@@ -136,8 +474,7 @@ function makeDefaultConfig(userId) {
         createdAt: new Date().toISOString()
       };
       
-      users.push(adminUser);
-      saveUsers(users);
+      await dbAddUser(adminUser);
       console.log(`[Migration] Created default 'admin' account with password 'admin123'`);
       
       // Migrate Config
@@ -150,10 +487,7 @@ function makeDefaultConfig(userId) {
       
       const baseDefaults = makeDefaultConfig(defaultUserId);
       const migratedConfig = Object.assign({}, baseDefaults, legacyConfig, { userId: defaultUserId });
-      
-      const configs = loadConfigs();
-      configs.push(migratedConfig);
-      saveConfigs(configs);
+      await dbSaveConfig(migratedConfig);
       
       // Migrate Image Assets if they exist
       const legacyLogo = path.join(__dirname, 'public', 'streamer_logo.jpg');
@@ -172,12 +506,10 @@ function makeDefaultConfig(userId) {
           legacyDonations = JSON.parse(fs.readFileSync(legacyDonationsPath, 'utf8'));
         } catch(err) {}
         
-        const migratedDonations = legacyDonations.map(d => {
-          return Object.assign({}, d, { userId: defaultUserId });
-        });
-        
-        const donations = loadDonations();
-        saveDonations(donations.concat(migratedDonations));
+        for (const d of legacyDonations) {
+          const migratedDonation = Object.assign({}, d, { userId: defaultUserId });
+          await dbSaveDonation(migratedDonation);
+        }
       }
       
       // Rename files to prevent duplicate migrations
@@ -186,7 +518,7 @@ function makeDefaultConfig(userId) {
         if (fs.existsSync(legacyDonationsPath)) {
           fs.renameSync(legacyDonationsPath, legacyDonationsPath + '.bak');
         }
-        console.log('[Migration] Single-user config successfully migrated to multi-tenant DB.');
+        console.log('[Migration] Single-user config successfully migrated to database.');
       } catch (err) {
         console.error('[Migration] Failed renaming backup files:', err);
       }
@@ -279,19 +611,15 @@ function parseNotificationText(title, text) {
 }
 
 // Safe helper to complete payment logic
-function completePayment(donation, config, username) {
+async function completePayment(donation, config, username) {
   donation.status = config.requireApproval ? 'pending_approval' : 'paid';
   donation.paidAt = new Date().toISOString();
   
   // Increment Goal progress if enabled AND NOT a simulation
   if (config.goalEnabled && !donation.isSimulation) {
     config.goalCurrent = (config.goalCurrent || 0) + donation.amount;
-    const configs = loadConfigs();
-    const configIndex = configs.findIndex(c => c.userId === config.userId);
-    if (configIndex !== -1) {
-      configs[configIndex] = config;
-      saveConfigs(configs);
-    }
+    await dbSaveConfig(config);
+
     // Broadcast goal update inside channel room
     io.to(username.toLowerCase()).emit('goal-update', {
       title: config.goalTitle,
@@ -322,17 +650,17 @@ io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
   
   // Scoped room register
-  socket.on('join-room', (username) => {
+  socket.on('join-room', async (username) => {
     if (!username) return;
     const cleanRoom = username.trim().toLowerCase();
     socket.join(cleanRoom);
     console.log(`Socket ${socket.id} joined room: ${cleanRoom}`);
     
     // Emit correct goal update
-    const users = loadUsers();
+    const users = await dbGetUsers();
     const targetUser = users.find(u => u.username.toLowerCase() === cleanRoom);
     if (targetUser) {
-      const configs = loadConfigs();
+      const configs = await dbGetConfigs();
       const config = configs.find(c => c.userId === targetUser.id);
       if (config) {
         socket.emit('goal-update', {
@@ -352,7 +680,7 @@ io.on('connection', (socket) => {
 
 // --- API AUTHENTICATION ENDPOINTS ---
 
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: 'กรุณากรอก Username และ Password' });
@@ -363,7 +691,7 @@ app.post('/api/auth/register', (req, res) => {
     return res.status(400).json({ error: 'Username ต้องมีความยาว 3 ตัวอักษรขึ้นไป และสามารถใช้ได้เฉพาะ A-Z, 0-9, _, - เท่านั้น' });
   }
 
-  const users = loadUsers();
+  const users = await dbGetUsers();
   if (users.find(u => u.username.toLowerCase() === cleanUsername)) {
     return res.status(400).json({ error: 'ชื่อผู้ใช้งานนี้ถูกสมัครไปแล้ว' });
   }
@@ -380,27 +708,24 @@ app.post('/api/auth/register', (req, res) => {
     createdAt: new Date().toISOString()
   };
 
-  users.push(newUser);
-  saveUsers(users);
+  await dbAddUser(newUser);
 
   // Initialize Default configs
-  const configs = loadConfigs();
   const defConfig = makeDefaultConfig(userId);
-  configs.push(defConfig);
-  saveConfigs(configs);
+  await dbSaveConfig(defConfig);
 
   req.session.userId = userId;
   res.json({ success: true, user: { id: userId, username: cleanUsername } });
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: 'กรุณากรอกข้อมูลให้ครบถ้วน' });
   }
 
   const cleanUsername = username.trim().toLowerCase();
-  const users = loadUsers();
+  const users = await dbGetUsers();
   const user = users.find(u => u.username.toLowerCase() === cleanUsername);
 
   if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
@@ -416,11 +741,11 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
-app.get('/api/auth/me', (req, res) => {
+app.get('/api/auth/me', async (req, res) => {
   if (!req.session.userId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  const users = loadUsers();
+  const users = await dbGetUsers();
   const user = users.find(u => u.id === req.session.userId);
   if (!user) {
     return res.status(401).json({ error: 'User not found' });
@@ -430,13 +755,13 @@ app.get('/api/auth/me', (req, res) => {
 
 // --- SCAPED CONFIG & ASSET APIS ---
 
-app.get('/api/config', (req, res) => {
+app.get('/api/config', async (req, res) => {
   const targetUsername = req.query.username;
-  const configs = loadConfigs();
+  const configs = await dbGetConfigs();
   
   if (targetUsername) {
     // Public fetch scoped config by username (Viewer or OBS Overlay queries)
-    const users = loadUsers();
+    const users = await dbGetUsers();
     const user = users.find(u => u.username.toLowerCase() === targetUsername.trim().toLowerCase());
     if (!user) {
       return res.status(404).json({ error: 'Streamer not found' });
@@ -457,23 +782,21 @@ app.get('/api/config', (req, res) => {
   let config = configs.find(c => c.userId === req.session.userId);
   if (!config) {
     config = makeDefaultConfig(req.session.userId);
-    configs.push(config);
-    saveConfigs(configs);
+    await dbSaveConfig(config);
   }
   res.json(config);
 });
 
-app.post('/api/config', (req, res) => {
+app.post('/api/config', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
   
-  const configs = loadConfigs();
-  const configIndex = configs.findIndex(c => c.userId === req.session.userId);
+  const configs = await dbGetConfigs();
+  const config = configs.find(c => c.userId === req.session.userId);
   
-  if (configIndex === -1) {
+  if (!config) {
     return res.status(404).json({ error: 'Config entity not found' });
   }
 
-  const existingConfig = configs[configIndex];
   const { 
     promptpayId, verifyMode, easyslipApiKey, streamerName, streamerDescription,
     bannedWords, requireApproval, minAmountTts, minDonateAmount, ttsSpeed, ttsPitch, soundVolume,
@@ -482,36 +805,35 @@ app.post('/api/config', (req, res) => {
     viewerAccentColor, viewerBannerFile
   } = req.body;
 
-  const updatedConfig = Object.assign({}, existingConfig, {
-    promptpayId: promptpayId || existingConfig.promptpayId,
-    verifyMode: verifyMode || existingConfig.verifyMode,
-    easyslipApiKey: easyslipApiKey !== undefined ? easyslipApiKey : existingConfig.easyslipApiKey,
-    streamerName: streamerName || existingConfig.streamerName,
-    streamerDescription: streamerDescription !== undefined ? streamerDescription : existingConfig.streamerDescription,
-    bannedWords: bannedWords !== undefined ? bannedWords : existingConfig.bannedWords,
-    requireApproval: requireApproval !== undefined ? !!requireApproval : existingConfig.requireApproval,
-    minAmountTts: minAmountTts !== undefined ? Number(minAmountTts) : existingConfig.minAmountTts,
-    minDonateAmount: minDonateAmount !== undefined ? Number(minDonateAmount) : existingConfig.minDonateAmount,
-    ttsSpeed: ttsSpeed !== undefined ? Number(ttsSpeed) : existingConfig.ttsSpeed,
-    ttsPitch: ttsPitch !== undefined ? Number(ttsPitch) : existingConfig.ttsPitch,
-    soundVolume: soundVolume !== undefined ? Number(soundVolume) : existingConfig.soundVolume,
-    overlayAccentColor: overlayAccentColor || existingConfig.overlayAccentColor,
-    overlayTextColor: overlayTextColor || existingConfig.overlayTextColor,
-    alertAnimation: alertAnimation || existingConfig.alertAnimation,
-    alertSoundFile: alertSoundFile !== undefined ? alertSoundFile : existingConfig.alertSoundFile,
-    goalEnabled: goalEnabled !== undefined ? !!goalEnabled : existingConfig.goalEnabled,
-    goalTitle: goalTitle || existingConfig.goalTitle,
-    goalTarget: goalTarget !== undefined ? Number(goalTarget) : existingConfig.goalTarget,
-    goalCurrent: goalCurrent !== undefined ? Number(goalCurrent) : existingConfig.goalCurrent,
-    viewerAccentColor: viewerAccentColor || existingConfig.viewerAccentColor,
-    viewerBannerFile: viewerBannerFile !== undefined ? viewerBannerFile : existingConfig.viewerBannerFile
+  const updatedConfig = Object.assign({}, config, {
+    promptpayId: promptpayId || config.promptpayId,
+    verifyMode: verifyMode || config.verifyMode,
+    easyslipApiKey: easyslipApiKey !== undefined ? easyslipApiKey : config.easyslipApiKey,
+    streamerName: streamerName || config.streamerName,
+    streamerDescription: streamerDescription !== undefined ? streamerDescription : config.streamerDescription,
+    bannedWords: bannedWords !== undefined ? bannedWords : config.bannedWords,
+    requireApproval: requireApproval !== undefined ? !!requireApproval : config.requireApproval,
+    minAmountTts: minAmountTts !== undefined ? Number(minAmountTts) : config.minAmountTts,
+    minDonateAmount: minDonateAmount !== undefined ? Number(minDonateAmount) : config.minDonateAmount,
+    ttsSpeed: ttsSpeed !== undefined ? Number(ttsSpeed) : config.ttsSpeed,
+    ttsPitch: ttsPitch !== undefined ? Number(ttsPitch) : config.ttsPitch,
+    soundVolume: soundVolume !== undefined ? Number(soundVolume) : config.soundVolume,
+    overlayAccentColor: overlayAccentColor || config.overlayAccentColor,
+    overlayTextColor: overlayTextColor || config.overlayTextColor,
+    alertAnimation: alertAnimation || config.alertAnimation,
+    alertSoundFile: alertSoundFile !== undefined ? alertSoundFile : config.alertSoundFile,
+    goalEnabled: goalEnabled !== undefined ? !!goalEnabled : config.goalEnabled,
+    goalTitle: goalTitle || config.goalTitle,
+    goalTarget: goalTarget !== undefined ? Number(goalTarget) : config.goalTarget,
+    goalCurrent: goalCurrent !== undefined ? Number(goalCurrent) : config.goalCurrent,
+    viewerAccentColor: viewerAccentColor || config.viewerAccentColor,
+    viewerBannerFile: viewerBannerFile !== undefined ? viewerBannerFile : config.viewerBannerFile
   });
 
-  configs[configIndex] = updatedConfig;
-  saveConfigs(configs);
+  await dbSaveConfig(updatedConfig);
 
   // Broadcast dynamic update to goal OBS widgets
-  const users = loadUsers();
+  const users = await dbGetUsers();
   const user = users.find(u => u.id === req.session.userId);
   if (user) {
     io.to(user.username.toLowerCase()).emit('goal-update', {
@@ -543,7 +865,7 @@ app.post('/api/upload-logo', (req, res) => {
 });
 
 // Banner Custom Upload
-app.post('/api/upload-banner', (req, res) => {
+app.post('/api/upload-banner', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
   const { imageBase64 } = req.body;
   if (!imageBase64) return res.status(400).json({ error: 'No image data provided' });
@@ -553,11 +875,11 @@ app.post('/api/upload-banner', (req, res) => {
     const targetPath = path.join(BANNERS_DIR, `${req.session.userId}.jpg`);
     fs.writeFileSync(targetPath, buffer);
     
-    const configs = loadConfigs();
-    const configIndex = configs.findIndex(c => c.userId === req.session.userId);
-    if (configIndex !== -1) {
-      configs[configIndex].viewerBannerFile = `/uploads/banners/${req.session.userId}.jpg`;
-      saveConfigs(configs);
+    const configs = await dbGetConfigs();
+    const config = configs.find(c => c.userId === req.session.userId);
+    if (config) {
+      config.viewerBannerFile = `/uploads/banners/${req.session.userId}.jpg`;
+      await dbSaveConfig(config);
     }
     
     res.json({ success: true, message: 'Banner successfully updated' });
@@ -568,7 +890,7 @@ app.post('/api/upload-banner', (req, res) => {
 });
 
 // Custom sound file upload endpoint
-app.post('/api/upload-sound', (req, res) => {
+app.post('/api/upload-sound', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
   const { soundBase64, filename } = req.body;
   if (!soundBase64) return res.status(400).json({ error: 'No sound data provided' });
@@ -581,11 +903,11 @@ app.post('/api/upload-sound', (req, res) => {
     
     fs.writeFileSync(targetPath, buffer);
     
-    const configs = loadConfigs();
-    const configIndex = configs.findIndex(c => c.userId === req.session.userId);
-    if (configIndex !== -1) {
-      configs[configIndex].alertSoundFile = `/uploads/sounds/${targetFilename}`;
-      saveConfigs(configs);
+    const configs = await dbGetConfigs();
+    const config = configs.find(c => c.userId === req.session.userId);
+    if (config) {
+      config.alertSoundFile = `/uploads/sounds/${targetFilename}`;
+      await dbSaveConfig(config);
     }
     
     res.json({ success: true, message: 'Sound uploaded successfully', filename: `/uploads/sounds/${targetFilename}` });
@@ -597,13 +919,13 @@ app.post('/api/upload-sound', (req, res) => {
 
 // --- DONATIONS APIS ---
 
-app.get('/api/donations', (req, res) => {
+app.get('/api/donations', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
-  const donations = loadDonations();
+  const donations = await dbGetDonations();
   res.json(donations.filter(d => d.userId === req.session.userId));
 });
 
-app.post('/api/donate', (req, res) => {
+app.post('/api/donate', async (req, res) => {
   const { name, message, amount, username } = req.body;
   
   if (!username) return res.status(400).json({ error: 'Username target is required' });
@@ -611,11 +933,11 @@ app.post('/api/donate', (req, res) => {
     return res.status(400).json({ error: 'Invalid name or amount' });
   }
 
-  const users = loadUsers();
+  const users = await dbGetUsers();
   const targetUser = users.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
   if (!targetUser) return res.status(400).json({ error: 'สตรีมเมอร์เป้าหมายไม่ปรากฏในระบบ' });
   
-  const configs = loadConfigs();
+  const configs = await dbGetConfigs();
   const config = configs.find(c => c.userId === targetUser.id);
   if (!config) return res.status(400).json({ error: 'Config details missing' });
   
@@ -640,12 +962,11 @@ app.post('/api/donate', (req, res) => {
     amount: parseFloat(amount),
     status: 'pending',
     qrPayload,
+    isSimulation: false,
     createdAt: new Date().toISOString()
   };
   
-  const donations = loadDonations();
-  donations.push(donation);
-  saveDonations(donations);
+  await dbSaveDonation(donation);
   
   res.json({
     success: true,
@@ -655,29 +976,28 @@ app.post('/api/donate', (req, res) => {
   });
 });
 
-app.post('/api/simulate-success', (req, res) => {
+app.post('/api/simulate-success', async (req, res) => {
   const { donationId } = req.body;
-  const donations = loadDonations();
-  const donationIndex = donations.findIndex(d => d.id === donationId);
+  const donations = await dbGetDonations();
+  const donation = donations.find(d => d.id === donationId);
   
-  if (donationIndex === -1) return res.status(404).json({ error: 'Donation not found' });
-  const donation = donations[donationIndex];
+  if (!donation) return res.status(404).json({ error: 'Donation not found' });
   
   if (donation.status === 'paid' || donation.status === 'pending_approval') {
     return res.status(400).json({ error: 'Donation already processed' });
   }
   
-  const users = loadUsers();
+  const users = await dbGetUsers();
   const user = users.find(u => u.id === donation.userId);
   if (!user) return res.status(400).json({ error: 'Associated user missing' });
   
-  const configs = loadConfigs();
+  const configs = await dbGetConfigs();
   const config = configs.find(c => c.userId === donation.userId);
   
   donation.isSimulation = true;
   donation.verificationMethod = 'Simulation';
-  completePayment(donation, config, user.username);
-  saveDonations(donations);
+  await completePayment(donation, config, user.username);
+  await dbSaveDonation(donation);
   
   res.json({ success: true, donation });
 });
@@ -688,27 +1008,26 @@ app.post('/api/verify', async (req, res) => {
     return res.status(400).json({ error: 'QR Data and Donation ID are required' });
   }
   
-  const donations = loadDonations();
-  const donationIndex = donations.findIndex(d => d.id === donationId);
-  if (donationIndex === -1) return res.status(404).json({ error: 'Donation not found' });
+  const donations = await dbGetDonations();
+  const donation = donations.find(d => d.id === donationId);
+  if (!donation) return res.status(404).json({ error: 'Donation not found' });
   
-  const donation = donations[donationIndex];
   if (donation.status === 'paid' || donation.status === 'pending_approval') {
     return res.json({ success: true, message: 'Already processed', donation });
   }
 
-  const users = loadUsers();
+  const users = await dbGetUsers();
   const user = users.find(u => u.id === donation.userId);
   if (!user) return res.status(400).json({ error: 'Target user missing' });
 
-  const configs = loadConfigs();
+  const configs = await dbGetConfigs();
   const config = configs.find(c => c.userId === donation.userId);
   
   if (config.verifyMode === 'simulate') {
     donation.isSimulation = true;
     donation.verificationMethod = 'Simulation';
-    completePayment(donation, config, user.username);
-    saveDonations(donations);
+    await completePayment(donation, config, user.username);
+    await dbSaveDonation(donation);
     return res.json({ success: true, message: 'Simulated payment verified', donation });
   }
   
@@ -722,9 +1041,10 @@ app.post('/api/verify', async (req, res) => {
       donation.slipQrData = qrData;
       donation.transRef = 'MOCK_REF_' + Date.now();
       donation.senderName = 'ผู้โอนตัวจริง (สแกนทดสอบ)';
+      donation.isSimulation = false;
       
-      completePayment(donation, config, user.username);
-      saveDonations(donations);
+      await completePayment(donation, config, user.username);
+      await dbSaveDonation(donation);
       
       return res.json({ success: true, message: 'ตรวจสลิปทดสอบสำเร็จ', donation });
     }
@@ -757,9 +1077,10 @@ app.post('/api/verify', async (req, res) => {
       donation.slipQrData = qrData;
       donation.transRef = slipData.transRef;
       donation.senderName = filteredSenderName;
+      donation.isSimulation = false;
       
-      completePayment(donation, config, user.username);
-      saveDonations(donations);
+      await completePayment(donation, config, user.username);
+      await dbSaveDonation(donation);
       
       res.json({ success: true, donation });
     } else {
@@ -772,7 +1093,7 @@ app.post('/api/verify', async (req, res) => {
 });
 
 // webhook macro connection supporting specific username query params
-app.all('/api/webhook/notification', (req, res) => {
+app.all('/api/webhook/notification', async (req, res) => {
   const username = req.query.username || req.body.username;
   if (!username) return res.status(400).json({ error: 'Username parameter missing' });
 
@@ -781,11 +1102,11 @@ app.all('/api/webhook/notification', (req, res) => {
   
   console.log(`[Webhook] Scoped webhook for user: ${username}`);
   
-  const users = loadUsers();
+  const users = await dbGetUsers();
   const user = users.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
   if (!user) return res.status(404).json({ error: 'Target user not found' });
   
-  const configs = loadConfigs();
+  const configs = await dbGetConfigs();
   const config = configs.find(c => c.userId === user.id);
   if (!config) return res.status(400).json({ error: 'Config files missing' });
 
@@ -795,7 +1116,7 @@ app.all('/api/webhook/notification', (req, res) => {
   }
   
   const filteredSender = filterProfanity(parsed.sender, config.bannedWords);
-  const donations = loadDonations();
+  const donations = await dbGetDonations();
   const now = new Date();
   
   const matchIndex = donations.findIndex(d => {
@@ -809,8 +1130,9 @@ app.all('/api/webhook/notification', (req, res) => {
     const donation = donations[matchIndex];
     donation.senderName = filteredSender;
     donation.verificationMethod = 'Notification Forwarder';
-    completePayment(donation, config, user.username);
-    saveDonations(donations);
+    donation.isSimulation = false;
+    await completePayment(donation, config, user.username);
+    await dbSaveDonation(donation);
     return res.json({ status: 'success', matched: true, donation });
   } else {
     const donationId = 'don_direct_' + Date.now();
@@ -822,33 +1144,32 @@ app.all('/api/webhook/notification', (req, res) => {
       amount: parsed.amount,
       createdAt: now.toISOString(),
       senderName: filteredSender,
+      isSimulation: false,
       verificationMethod: 'Notification Forwarder (Direct)'
     };
     
-    completePayment(newDonation, config, user.username);
-    donations.push(newDonation);
-    saveDonations(donations);
+    await completePayment(newDonation, config, user.username);
+    await dbSaveDonation(newDonation);
     return res.json({ status: 'success', matched: false, donation: newDonation });
   }
 });
 
 // Approve Pending Action
-app.post('/api/donations/approve', (req, res) => {
+app.post('/api/donations/approve', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
   const { donationId } = req.body;
   
-  const donations = loadDonations();
-  const donationIndex = donations.findIndex(d => d.id === donationId && d.userId === req.session.userId);
-  if (donationIndex === -1) return res.status(404).json({ error: 'Donation not found' });
+  const donations = await dbGetDonations();
+  const donation = donations.find(d => d.id === donationId && d.userId === req.session.userId);
+  if (!donation) return res.status(404).json({ error: 'Donation not found' });
   
-  const donation = donations[donationIndex];
   if (donation.status !== 'pending_approval') return res.status(400).json({ error: 'Not waiting for approval' });
   
   donation.status = 'paid';
   donation.approvedAt = new Date().toISOString();
-  saveDonations(donations);
+  await dbSaveDonation(donation);
 
-  const users = loadUsers();
+  const users = await dbGetUsers();
   const user = users.find(u => u.id === req.session.userId);
 
   io.to(user.username.toLowerCase()).emit('donation-alert', {
@@ -864,28 +1185,28 @@ app.post('/api/donations/approve', (req, res) => {
 });
 
 // Reject Pending Action
-app.post('/api/donations/reject', (req, res) => {
+app.post('/api/donations/reject', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
   const { donationId } = req.body;
   
-  const donations = loadDonations();
-  const donationIndex = donations.findIndex(d => d.id === donationId && d.userId === req.session.userId);
-  if (donationIndex === -1) return res.status(404).json({ error: 'Donation not found' });
+  const donations = await dbGetDonations();
+  const donation = donations.find(d => d.id === donationId && d.userId === req.session.userId);
+  if (!donation) return res.status(404).json({ error: 'Donation not found' });
   
-  const donation = donations[donationIndex];
   if (donation.status !== 'pending_approval') return res.status(400).json({ error: 'Not waiting for approval' });
   
   donation.status = 'rejected';
   donation.rejectedAt = new Date().toISOString();
-  saveDonations(donations);
+  await dbSaveDonation(donation);
   res.json({ success: true, donation });
 });
 
 // Get Scoped statistics
-app.get('/api/stats', (req, res) => {
+app.get('/api/stats', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
   
-  const donations = loadDonations().filter(d => d.userId === req.session.userId);
+  const allDonations = await dbGetDonations();
+  const donations = allDonations.filter(d => d.userId === req.session.userId);
   const paidAndApproval = donations.filter(d => (d.status === 'paid' || d.status === 'pending_approval') && !d.isSimulation);
   
   const totalAmount = paidAndApproval.reduce((sum, d) => sum + d.amount, 0);
@@ -944,12 +1265,12 @@ app.get('/api/tts', async (req, res) => {
 });
 
 // Trigger a Test Alert from Dashboard
-app.post('/api/test-alert', (req, res) => {
+app.post('/api/test-alert', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
   
-  const users = loadUsers();
+  const users = await dbGetUsers();
   const user = users.find(u => u.id === req.session.userId);
-  const configs = loadConfigs();
+  const configs = await dbGetConfigs();
   const config = configs.find(c => c.userId === req.session.userId);
 
   const { name, message, amount } = req.body;
@@ -971,12 +1292,12 @@ app.post('/api/test-alert', (req, res) => {
 
 // --- Dynamic Streamer URL catch-all routes ---
 
-app.get('/:username', (req, res, next) => {
+app.get('/:username', async (req, res, next) => {
   const cleanName = req.params.username.split('.')[0];
   if (['api', 'css', 'js', 'uploads', 'login.html', 'admin.html', 'overlay.html', 'goal.html', 'index.html', 'favicon'].includes(cleanName)) {
     return next();
   }
-  const users = loadUsers();
+  const users = await dbGetUsers();
   const user = users.find(u => u.username.toLowerCase() === cleanName.toLowerCase());
   if (user) {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -985,9 +1306,9 @@ app.get('/:username', (req, res, next) => {
   }
 });
 
-app.get('/:username/overlay', (req, res) => {
+app.get('/:username/overlay', async (req, res) => {
   const cleanName = req.params.username.toLowerCase();
-  const users = loadUsers();
+  const users = await dbGetUsers();
   const user = users.find(u => u.username.toLowerCase() === cleanName);
   if (user) {
     res.sendFile(path.join(__dirname, 'public', 'overlay.html'));
@@ -996,9 +1317,9 @@ app.get('/:username/overlay', (req, res) => {
   }
 });
 
-app.get('/:username/goal', (req, res) => {
+app.get('/:username/goal', async (req, res) => {
   const cleanName = req.params.username.toLowerCase();
-  const users = loadUsers();
+  const users = await dbGetUsers();
   const user = users.find(u => u.username.toLowerCase() === cleanName);
   if (user) {
     res.sendFile(path.join(__dirname, 'public', 'goal.html'));
