@@ -42,6 +42,11 @@ async function fetchConfig() {
     // Dynamic page branding
     document.getElementById('streamerName').innerText = config.streamerName || 'SEAHOUSE STREAM';
     document.getElementById('streamerDescription').innerText = config.streamerDescription || 'ขอบคุณสำหรับการสนับสนุน!';
+    
+    const avatarImg = document.querySelector('.streamer-avatar');
+    if (avatarImg) {
+      avatarImg.src = `/streamer_logo.jpg?t=${Date.now()}`;
+    }
   } catch (error) {
     console.error('Error fetching config:', error);
   }

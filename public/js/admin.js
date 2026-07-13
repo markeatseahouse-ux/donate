@@ -1,4 +1,5 @@
 let socket;
+let pendingLogoBase64 = null; // Holds base64 data for upload
 
 document.addEventListener('DOMContentLoaded', () => {
   initSocket();
@@ -33,6 +34,10 @@ async function fetchConfig() {
     document.getElementById('streamerName').value = config.streamerName || '';
     document.getElementById('streamerDescription').value = config.streamerDescription || '';
 
+    // Cache buster for the profile preview image
+    const adminLogo = document.getElementById('adminLogoPreview');
+    adminLogo.src = `/streamer_logo.jpg?t=${Date.now()}`;
+
     toggleVerifyFields();
   } catch (error) {
     console.error('Error fetching config:', error);
@@ -63,7 +68,23 @@ async function fetchDonations() {
 
 // Setup form submit events
 function setupFormHandlers() {
-  // Save Settings
+  // Handle local image file selection
+  const logoInput = document.getElementById('streamerLogoInput');
+  const logoPreview = document.getElementById('adminLogoPreview');
+
+  logoInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        logoPreview.src = event.target.result; // Display preview locally
+        pendingLogoBase64 = event.target.result.split(',')[1]; // Capture base64 portion
+      };
+      reader.readAsDataURL(file);
+    }
+  });
+
+  // Save Settings Form
   const configForm = document.getElementById('configForm');
   configForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -84,6 +105,23 @@ function setupFormHandlers() {
     btn.innerText = 'กำลังบันทึก...';
 
     try {
+      // Step 1: Upload profile picture first if a new one was selected
+      if (pendingLogoBase64) {
+        console.log('Uploading new streamer logo image...');
+        const logoUploadResponse = await fetch('/api/upload-logo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageBase64: pendingLogoBase64 })
+        });
+        
+        const logoUploadResult = await logoUploadResponse.json();
+        if (!logoUploadResult.success) {
+          throw new Error(logoUploadResult.error || 'Failed to upload profile image');
+        }
+        pendingLogoBase64 = null; // Clear pending state
+      }
+
+      // Step 2: Upload other configurations
       const response = await fetch('/api/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -91,11 +129,11 @@ function setupFormHandlers() {
       });
 
       await response.json();
-      alert('บันทึกการตั้งค่าเรียบร้อยแล้ว');
-      fetchConfig(); // Reload
+      alert('บันทึกการตั้งค่าทั้งหมดเรียบร้อยแล้ว');
+      fetchConfig(); // Reload and refresh cache bust
     } catch (error) {
-      console.error('Error saving config:', error);
-      alert('บันทึกการตั้งค่าล้มเหลว');
+      console.error('Error saving configurations:', error);
+      alert('บันทึกการตั้งค่าล้มเหลว: ' + error.message);
     } finally {
       btn.disabled = false;
       btn.innerText = 'บันทึกการตั้งค่า';

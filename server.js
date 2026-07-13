@@ -20,7 +20,7 @@ const CONFIG_PATH = path.join(__dirname, 'config.json');
 const DONATIONS_PATH = path.join(__dirname, 'donations.json');
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // Increased limit to support base64 image uploads
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Helper to load configurations (Supports Environment Variables for Cloud Deployment)
@@ -138,6 +138,26 @@ app.post('/api/config', (req, res) => {
   const config = { promptpayId, verifyMode, easyslipApiKey, streamerName, streamerDescription };
   saveConfig(config);
   res.json({ message: 'Configuration saved successfully', config });
+});
+
+// Logo Upload Endpoint
+app.post('/api/upload-logo', (req, res) => {
+  const { imageBase64 } = req.body;
+  if (!imageBase64) {
+    return res.status(400).json({ error: 'No image data provided' });
+  }
+  
+  try {
+    const buffer = Buffer.from(imageBase64, 'base64');
+    const targetPath = path.join(__dirname, 'public', 'streamer_logo.jpg');
+    
+    // Save image locally (this will overwrite public/streamer_logo.jpg)
+    fs.writeFileSync(targetPath, buffer);
+    res.json({ success: true, message: 'Streamer logo updated successfully' });
+  } catch (error) {
+    console.error('Logo upload error:', error);
+    res.status(500).json({ error: 'Failed to save logo image file' });
+  }
 });
 
 // Donations list API
