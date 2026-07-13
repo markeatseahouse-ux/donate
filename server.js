@@ -39,11 +39,11 @@ function loadConfig() {
     const data = fs.readFileSync(CONFIG_PATH, 'utf8');
     const diskConfig = JSON.parse(data);
     
-    // Merge environment variables as overrides/defaults
+    // PRIORITIZE diskConfig (saved via admin panel) OVER process.env (Render setup default/fallback)
     return {
-      promptpayId: process.env.PROMPTPAY_ID || diskConfig.promptpayId || defaults.promptpayId,
-      verifyMode: process.env.VERIFY_MODE || diskConfig.verifyMode || defaults.verifyMode,
-      easyslipApiKey: process.env.EASYSLIP_API_KEY || diskConfig.easyslipApiKey || defaults.easyslipApiKey
+      promptpayId: diskConfig.promptpayId || process.env.PROMPTPAY_ID || defaults.promptpayId,
+      verifyMode: diskConfig.verifyMode || process.env.VERIFY_MODE || defaults.verifyMode,
+      easyslipApiKey: diskConfig.easyslipApiKey || process.env.EASYSLIP_API_KEY || defaults.easyslipApiKey
     };
   } catch (err) {
     console.error('Error reading config.json, using defaults', err);
@@ -411,6 +411,34 @@ app.all('/api/webhook/notification', (req, res) => {
     
     console.log(`[Notification Webhook] Created direct donation for ${newDonation.amount} THB`);
     return res.json({ status: 'success', matched: false, donation: newDonation });
+  }
+});
+
+// --- API Proxy for Google Translate TTS (Bypasses Referrer Blocks) ---
+app.get('/api/tts', async (req, res) => {
+  const { text, lang } = req.query;
+  if (!text) {
+    return res.status(400).send('Text is required');
+  }
+  
+  const targetLang = lang || 'th';
+  const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${targetLang}&client=tw-ob&q=${encodeURIComponent(text)}`;
+  
+  try {
+    const response = await axios({
+      method: 'get',
+      url: url,
+      responseType: 'stream',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Safari/537.36'
+      }
+    });
+    
+    res.setHeader('Content-Type', 'audio/mpeg');
+    response.data.pipe(res);
+  } catch (error) {
+    console.error('[TTS Proxy Error]:', error.message);
+    res.status(500).send('Failed to retrieve speech audio');
   }
 });
 

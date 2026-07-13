@@ -191,8 +191,8 @@ function speakText(text, lang, callback) {
   const isThaiVoiceAvailable = voiceTh && voiceTh.lang.toLowerCase().includes('th');
   
   if (lang === 'th' && !isThaiVoiceAvailable) {
-    console.log('[TTS] No local Thai speech engine found. Using Google Translate TTS Online Fallback.');
-    const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=th&client=tw-ob&q=${encodeURIComponent(text)}`;
+    console.log('[TTS] No local Thai speech engine found. Using Google Translate TTS Online Fallback Proxy.');
+    const url = `/api/tts?lang=th&text=${encodeURIComponent(text)}`;
     const audio = new Audio(url);
     
     audio.onended = () => callback();
