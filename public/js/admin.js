@@ -36,7 +36,6 @@ async function checkAuth() {
     fetchConfig();
     fetchStats();
     fetchDonations();
-    fetchWallet();
     renderEarningsChart();
   } catch (error) {
     console.error('Authentication check failed:', error);
@@ -146,8 +145,6 @@ window.switchTab = function(tabId) {
   // Dynamic reload triggers
   if (tabId === 'tab-dashboard') {
     renderEarningsChart();
-  } else if (tabId === 'tab-wallet') {
-    fetchWallet();
   }
 };
 
@@ -182,7 +179,6 @@ async function fetchConfig() {
     document.getElementById('streamerName').value = currentConfig.streamerName || '';
     document.getElementById('streamerDescription').value = currentConfig.streamerDescription || '';
     document.getElementById('viewerAccentColor').value = currentConfig.viewerAccentColor || '#8a2be2';
-    document.getElementById('paymentMode').value = currentConfig.paymentMode || 'direct';
 
     // EasySlip UI restrictions (Only platform owner admin configures the key)
     const isOwner = (currentUsername === 'admin');
@@ -413,7 +409,6 @@ async function handleConfigSubmit(e) {
   const streamerName = document.getElementById('streamerName').value.trim();
   const streamerDescription = document.getElementById('streamerDescription').value.trim();
   const viewerAccentColor = document.getElementById('viewerAccentColor').value;
-  const paymentMode = document.getElementById('paymentMode').value;
 
   if (!promptpayId) {
     alert('กรุณากรอก PromptPay ID');
@@ -455,7 +450,7 @@ async function handleConfigSubmit(e) {
     const response = await fetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ promptpayId, minDonateAmount, verifyMode, easyslipApiKey, streamerName, streamerDescription, viewerAccentColor, paymentMode })
+      body: JSON.stringify({ promptpayId, minDonateAmount, verifyMode, easyslipApiKey, streamerName, streamerDescription, viewerAccentColor })
     });
     
     await response.json();
@@ -818,108 +813,6 @@ function escapeHtml(str) {
 
 // Global Chart instance
 let earningsChartInstance = null;
-
-// Fetch Wallet Balance and Payout history
-async function fetchWallet() {
-  try {
-    const response = await fetch('/api/streamer/wallet?t=' + Date.now());
-    if (!response.ok) return;
-
-    const data = await response.json();
-    
-    // Update dashboard text elements
-    document.getElementById('walletBalanceText').innerText = `${data.balance.toLocaleString('th-TH', { minimumFractionDigits: 2 })} THB`;
-    document.getElementById('walletFeeRateText').innerText = data.payoutRate.toFixed(1);
-    
-    // Prefill withdrawal PromptPay ID if empty
-    const payInput = document.getElementById('payoutPromptpay');
-    if (payInput && !payInput.value) {
-      payInput.value = currentConfig.promptpayId || '';
-    }
-
-    // Populate history table
-    const tbody = document.getElementById('payoutTableBody');
-    tbody.innerHTML = '';
-
-    if (data.payouts.length === 0) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 30px;">
-            ยังไม่มีประวัติการส่งคำขอถอนเงินในระบบ
-          </td>
-        </tr>
-      `;
-      return;
-    }
-
-    data.payouts.forEach(p => {
-      const tr = document.createElement('tr');
-      const dateStr = new Date(p.createdAt).toLocaleDateString('th-TH', {
-        year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-      });
-
-      let statusBadge = '';
-      if (p.status === 'approved') {
-        statusBadge = '<span style="background: rgba(0,255,135,0.15); color: #00ff87; padding: 4px 10px; border-radius: 20px; font-size:12px; font-weight:700;">🟢 โอนเรียบร้อย</span>';
-      } else if (p.status === 'declined') {
-        statusBadge = '<span style="background: rgba(255,0,127,0.15); color: #ff3366; padding: 4px 10px; border-radius: 20px; font-size:12px; font-weight:700;">🔴 ปฏิเสธการโอน</span>';
-      } else {
-        statusBadge = '<span style="background: rgba(255,170,0,0.15); color: #ffaa00; padding: 4px 10px; border-radius: 20px; font-size:12px; font-weight:700;">🟡 รอการตรวจสอบ</span>';
-      }
-
-      tr.innerHTML = `
-        <td style="color: var(--text-muted); font-size: 13px;">${dateStr}</td>
-        <td style="font-weight: 700;">${p.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} THB</td>
-        <td style="color: var(--text-muted);">${p.feeAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} THB</td>
-        <td style="color: #00ff87; font-weight: 700;">${p.netAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} THB</td>
-        <td>${statusBadge}</td>
-      `;
-      tbody.appendChild(tr);
-    });
-  } catch (err) {
-    console.error('Failed to fetch wallet info:', err);
-  }
-}
-
-// Request Payout Form submission handler
-async function handleRequestPayout(e) {
-  e.preventDefault();
-  
-  const amount = parseFloat(document.getElementById('payoutAmount').value);
-  const promptpayId = document.getElementById('payoutPromptpay').value.trim();
-  const bankName = document.getElementById('payoutBankName').value.trim();
-  const accountNumber = document.getElementById('payoutAccountNumber').value.trim();
-  const accountName = document.getElementById('payoutAccountName').value.trim();
-
-  if (isNaN(amount) || amount <= 0) {
-    alert('กรุณากรอกจำนวนเงินถอนที่ถูกต้อง');
-    return;
-  }
-
-  if (!confirm(`ยืนยันความถูกต้องของบัญชีผู้รับเงินปลายทาง:\n- PromptPay: ${promptpayId}\n- ชื่อเจ้าของบัญชี: ${accountName}\n\nต้องการส่งคำขอถอนเงินยอด ${amount.toFixed(2)} บาท หรือไม่?`)) {
-    return;
-  }
-
-  try {
-    const response = await fetch('/api/streamer/payout/request', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount, promptpayId, bankName, accountNumber, accountName })
-    });
-    
-    const data = await response.json();
-    if (response.ok && data.success) {
-      alert('ส่งคำขอถอนเงินสำเร็จ! กรุณารอผู้ดูแลระบบดำเนินการโอนเงินและอัปเดตสถานะ');
-      document.getElementById('payoutAmount').value = '';
-      fetchWallet(); // Reload balance and list
-    } else {
-      alert(data.error || 'ถอนเงินล้มเหลว');
-    }
-  } catch (err) {
-    console.error('Request payout failed:', err);
-    alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
-  }
-}
 
 // Render Earnings Chart using Chart.js
 async function renderEarningsChart() {
