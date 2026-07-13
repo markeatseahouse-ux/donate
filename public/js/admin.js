@@ -22,6 +22,12 @@ async function checkAuth() {
     const data = await response.json();
     currentUsername = data.user.username;
     
+    // Display Super Admin link for Platform Owner
+    if (data.user.role === 'admin') {
+      const ownerLink = document.getElementById('superAdminLinkContainer');
+      if (ownerLink) ownerLink.style.display = 'block';
+    }
+
     // Populate links into the dashboard inputs immediately
     populateWidgetLinks();
     

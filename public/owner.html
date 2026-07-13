@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Owner Dashboard - Donate platform Control Center</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body {
+      background-image: 
+        radial-gradient(circle at 10% 20%, rgba(0, 242, 254, 0.15) 0%, transparent 50%),
+        radial-gradient(circle at 90% 80%, rgba(138, 43, 226, 0.2) 0%, transparent 50%);
+    }
+
+    .platform-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 30px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .nav-buttons {
+      display: flex;
+      gap: 12px;
+    }
+
+    .nav-buttons button, .nav-buttons a {
+      width: auto;
+      padding: 10px 20px;
+      font-size: 13.5px;
+      text-transform: none;
+      font-weight: 600;
+      border-radius: 8px;
+    }
+
+    .delete-btn {
+      background: rgba(255, 0, 127, 0.15) !important;
+      border: 1px solid rgba(255, 0, 127, 0.3) !important;
+      color: #ff3366 !important;
+      padding: 6px 12px !important;
+      font-size: 12.5px !important;
+      cursor: pointer;
+      border-radius: 6px;
+      box-shadow: none !important;
+    }
+
+    .delete-btn:hover {
+      background: rgba(255, 0, 127, 0.3) !important;
+      color: #ff4d79 !important;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="admin-container">
+    
+    <!-- Platform Header -->
+    <header class="platform-header">
+      <div>
+        <h1 class="gradient-text" style="font-size: 28px; letter-spacing: 1px; font-weight: 800;">👑 PLATFORM OWNER PANEL</h1>
+        <p style="color: var(--text-muted); font-size: 14px; margin-top: 4px;">หน้าจอควบคุมระดับสูง (Super Admin Control Room) สำหรับผู้ดูแลระบบสูงสุด</p>
+      </div>
+      <div class="nav-buttons">
+        <a href="/admin.html" class="button" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: #fff; text-decoration: none; display: inline-flex; align-items: center;">
+          ⚙️ ไปแดชบอร์ดช่องของฉัน
+        </a>
+        <button onclick="handleLogout()" style="background: rgba(255, 0, 127, 0.15); border: 1px solid rgba(255, 0, 127, 0.3); color: #ff3366;">
+          ออกจากระบบ
+        </button>
+      </div>
+    </header>
+
+    <!-- Platform Stats Dashboard -->
+    <div class="stats-grid mb-4">
+      <div class="glass-panel stats-card">
+        <div class="stats-icon">👥</div>
+        <div class="stats-value" id="statsStreamersCount">0</div>
+        <div class="stats-label">จำนวนสตรีมเมอร์ในระบบ (Channels)</div>
+      </div>
+      
+      <div class="glass-panel stats-card">
+        <div class="stats-icon">💎</div>
+        <div class="stats-value" id="statsTotalVolume">0.00 <span style="font-size: 15px;">THB</span></div>
+        <div class="stats-label">ยอดโดเนทรวมผ่านระบบ (Total Volume)</div>
+      </div>
+
+      <div class="glass-panel stats-card">
+        <div class="stats-icon">⚡</div>
+        <div class="stats-value" id="statsDonationsCount">0</div>
+        <div class="stats-label">จำนวนการโอนสำเร็จรวม (Transactions)</div>
+      </div>
+    </div>
+
+    <!-- Registered Streamers Directory -->
+    <div class="glass-panel" style="width: 100%;">
+      <h2>📂 ทำเนียบสตรีมเมอร์ & ยอดสะสม (Streamer Directory)</h2>
+      <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 14px;">แสดงบัญชีสตรีมเมอร์ทั้งหมดในระบบ ยอดรวมเงินโดเนท และเลข PromptPay บัญชีรับเงิน</p>
+      
+      <div class="table-container">
+        <table class="donation-table">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>ชื่อแสดงในระบบ</th>
+              <th>PromptPay ID</th>
+              <th>ยอดเงินโดเนทสะสม</th>
+              <th>วันที่ลงทะเบียน</th>
+              <th>จัดการระบบ</th>
+            </tr>
+          </thead>
+          <tbody id="streamersTableBody">
+            <tr>
+              <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 40px;">
+                กำลังโหลดข้อมูลสตรีมเมอร์ทั้งหมด...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      fetchPlatformStats();
+    });
+
+    async function fetchPlatformStats() {
+      try {
+        const response = await fetch('/api/owner/stats?t=' + Date.now());
+        if (!response.ok) {
+          if (response.status === 403) {
+            alert('คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (เฉพาะ Super Admin เท่านั้น)');
+            window.location.href = '/admin.html';
+            return;
+          }
+          window.location.href = '/login.html';
+          return;
+        }
+
+        const data = await response.json();
+        
+        // Populate stats
+        document.getElementById('statsStreamersCount').innerText = data.streamersCount;
+        document.getElementById('statsTotalVolume').innerHTML = `${data.totalVolume.toLocaleString('th-TH', { minimumFractionDigits: 2 })} <span style="font-size: 15px;">THB</span>`;
+        document.getElementById('statsDonationsCount').innerText = data.donationsCount;
+
+        // Populate table
+        const tbody = document.getElementById('streamersTableBody');
+        tbody.innerHTML = '';
+
+        if (data.streamers.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 40px;">
+                ยังไม่มีสตรีมเมอร์คนอื่นลงทะเบียนในระบบ
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        data.streamers.forEach(s => {
+          const tr = document.createElement('tr');
+          
+          const regDate = new Date(s.registeredAt).toLocaleDateString('th-TH', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
+
+          tr.innerHTML = `
+            <td style="font-weight: 700; color: #00f2fe;">
+              <a href="/${s.username}" target="_blank" style="color: inherit; text-decoration: underline;">${s.username}</a>
+            </td>
+            <td>${s.streamerName}</td>
+            <td style="font-family: monospace;">${s.promptpayId}</td>
+            <td style="font-weight: bold; color: #00ff87;">${s.earnings.toLocaleString('th-TH', { minimumFractionDigits: 2 })} THB</td>
+            <td style="color: var(--text-muted); font-size: 13px;">${regDate}</td>
+            <td>
+              <button onclick="deleteStreamer('${s.id}', '${s.username}')" class="delete-btn">
+                ลบบัญชี
+              </button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        console.error('Error fetching platform stats:', err);
+      }
+    }
+
+    async function deleteStreamer(id, username) {
+      if (!confirm(`⚠️ คำเตือน: คุณแน่ใจหรือไม่ว่าต้องการลบบัญชีของสตรีมเมอร์ "${username}"?\nการกระทำนี้จะลบข้อมูลการตั้งค่า ยอดเงินสะสมทั้งหมด และไม่สามารถย้อนคืนได้!`)) return;
+
+      try {
+        const response = await fetch('/api/owner/delete-streamer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ streamerId: id })
+        });
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          alert('ลบบัญชีสตรีมเมอร์เรียบร้อยแล้ว');
+          fetchPlatformStats();
+        } else {
+          alert(data.error || 'ลบล้มเหลว');
+        }
+      } catch (err) {
+        console.error('Delete streamer failed:', err);
+        alert('เชื่อมต่อเซิร์ฟเวอร์ล้มเหลว');
+      }
+    }
+
+    async function handleLogout() {
+      if (!confirm('คุณแน่ใจหรือไม่ว่าต้องการออกจากระบบ?')) return;
+      try {
+        const response = await fetch('/api/auth/logout', { method: 'POST' });
+        if (response.ok) {
+          window.location.href = '/login.html';
+        }
+      } catch (err) {
+        console.error('Logout error:', err);
+      }
+    }
+  </script>
+</body>
+</html>

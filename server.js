@@ -704,7 +704,7 @@ app.post('/api/auth/register', async (req, res) => {
     id: userId,
     username: cleanUsername,
     passwordHash,
-    role: 'streamer',
+    role: cleanUsername === 'admin' ? 'admin' : 'streamer',
     createdAt: new Date().toISOString()
   };
 
@@ -1288,6 +1288,90 @@ app.post('/api/test-alert', async (req, res) => {
   
   io.to(user.username.toLowerCase()).emit('donation-alert', testAlert);
   res.json({ success: true, alert: testAlert });
+});
+
+// --- PLATFORM OWNER APIS & ROUTING ---
+
+app.get('/owner.html', async (req, res, next) => {
+  if (!req.session.userId) return res.redirect('/login.html');
+  const users = await dbGetUsers();
+  const user = users.find(u => u.id === req.session.userId);
+  if (!user || user.role !== 'admin') {
+    return res.status(403).send('Forbidden: เฉพาะผู้เป็นเจ้าของระบบ (Platform Owner) เท่านั้นที่จะสามารถเข้าหน้าจอนี้ได้');
+  }
+  next();
+});
+
+app.get('/api/owner/stats', async (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+  const users = await dbGetUsers();
+  const user = users.find(u => u.id === req.session.userId);
+  if (!user || user.role !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const configs = await dbGetConfigs();
+  const donations = await dbGetDonations();
+
+  // Calculate platform metrics
+  const streamers = users.filter(u => u.role === 'streamer');
+  const paidDonations = donations.filter(d => d.status === 'paid' && !d.isSimulation);
+  const totalVolume = paidDonations.reduce((sum, d) => sum + d.amount, 0);
+
+  // Map streamers list with their accumulated earnings
+  const streamersList = streamers.map(s => {
+    const streamerConfig = configs.find(c => c.userId === s.id) || {};
+    const streamerPaid = donations.filter(d => d.userId === s.id && d.status === 'paid' && !d.isSimulation);
+    const earnings = streamerPaid.reduce((sum, d) => sum + d.amount, 0);
+    return {
+      id: s.id,
+      username: s.username,
+      streamerName: streamerConfig.streamerName || 'ไม่มีชื่อแสดง',
+      promptpayId: streamerConfig.promptpayId || 'ไม่ได้ระบุ',
+      earnings,
+      registeredAt: s.createdAt
+    };
+  });
+
+  res.json({
+    streamersCount: streamers.length,
+    totalVolume,
+    donationsCount: paidDonations.length,
+    streamers: streamersList
+  });
+});
+
+app.post('/api/owner/delete-streamer', async (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+  const users = await dbGetUsers();
+  const user = users.find(u => u.id === req.session.userId);
+  if (!user || user.role !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const { streamerId } = req.body;
+  if (!streamerId) return res.status(400).json({ error: 'Streamer ID required' });
+
+  // Ensure we don't delete another admin
+  const targetUser = users.find(u => u.id === streamerId);
+  if (!targetUser || targetUser.role === 'admin') {
+    return res.status(400).json({ error: 'ไม่พบผู้ใช้หรือบัญชีเป้าหมายเป็นผู้ดูแลระบบ' });
+  }
+
+  if (useDb) {
+    await pool.query('DELETE FROM users WHERE id = $1', [streamerId]);
+  } else {
+    const updatedUsers = users.filter(u => u.id !== streamerId);
+    saveUsers(updatedUsers);
+    
+    const configs = loadConfigs();
+    saveConfigs(configs.filter(c => c.userId !== streamerId));
+    
+    const donations = loadDonations();
+    saveDonations(donations.filter(d => d.userId !== streamerId));
+  }
+
+  res.json({ success: true, message: 'ลบบัญชีสตรีมเมอร์สำเร็จ' });
 });
 
 // --- Dynamic Streamer URL catch-all routes ---
