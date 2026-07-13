@@ -855,8 +855,7 @@ app.post('/api/config', async (req, res) => {
   await dbSaveConfig(updatedConfig);
 
   // Broadcast dynamic update to goal OBS widgets
-  const users = await dbGetUsers();
-  const user = users.find(u => u.id === req.session.userId);
+  // (user variable already declared above)
   if (user) {
     io.to(user.username.toLowerCase()).emit('goal-update', {
       title: updatedConfig.goalTitle,
