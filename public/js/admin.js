@@ -247,6 +247,13 @@ function toggleVerifyFields() {
   } else {
     easyslipFields.style.display = 'none';
   }
+  
+  // Re-enforce role-based visibility every time this runs
+  const isOwner = (currentUsername === 'admin');
+  const ownerApiKeyGroup = document.getElementById('ownerApiKeyGroup');
+  const streamerApiKeyStatus = document.getElementById('streamerApiKeyStatus');
+  if (ownerApiKeyGroup) ownerApiKeyGroup.style.display = isOwner ? 'block' : 'none';
+  if (streamerApiKeyStatus) streamerApiKeyStatus.style.display = isOwner ? 'none' : 'block';
 }
 
 // Fetch stats panel analytics
