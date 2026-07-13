@@ -43,6 +43,22 @@ function populateWidgetLinks() {
   if (goalLinkInput) {
     goalLinkInput.value = `${window.location.origin}/goal.html`;
   }
+
+  // Populate Dashboard links
+  const viewerLink = document.getElementById('viewerPageLink');
+  if (viewerLink) {
+    viewerLink.value = `${window.location.origin}/index.html`;
+  }
+
+  const overlayLink = document.getElementById('overlayWidgetLink');
+  if (overlayLink) {
+    overlayLink.value = `${window.location.origin}/overlay.html`;
+  }
+
+  const goalDashLink = document.getElementById('goalWidgetLinkDash');
+  if (goalDashLink) {
+    goalDashLink.value = `${window.location.origin}/goal.html`;
+  }
 }
 
 // Helper to switch dashboard tabs

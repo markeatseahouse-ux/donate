@@ -50,6 +50,42 @@
 
     <!-- TAB 1: Dashboard Analytics -->
     <div id="tab-dashboard" class="tab-content active">
+      
+      <!-- System Links Card -->
+      <div class="glass-panel mb-4" style="width: 100%;">
+        <h2>🔗 ลิงก์ระบบโดเนท & วิดเจ็ตสตรีม (System Browser Links)</h2>
+        <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 14px;">คัดลอกลิงก์ต่าง ๆ ไปแปะในสตรีมหรือส่งให้คนดูได้ง่าย ๆ จากตรงนี้</p>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
+          <!-- Link 1: Viewer Page -->
+          <div>
+            <label style="color: #ff007f; font-weight:700;">🌐 ลิงก์ให้คนกดโดเนท (Viewer Page)</label>
+            <div style="display: flex; gap: 8px; margin-top: 8px;">
+              <input type="text" id="viewerPageLink" readonly style="background: rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.1); font-size:13px;" value="">
+              <button type="button" onclick="copyWidgetLink('viewerPageLink')" style="width: auto; padding: 0 15px; font-size: 13px; background: rgba(255,255,255,0.05); box-shadow:none; border: 1px solid rgba(255,255,255,0.1); text-transform:none; font-weight:normal;">คัดลอก</button>
+            </div>
+          </div>
+
+          <!-- Link 2: Alert Overlay -->
+          <div>
+            <label style="color: #00f2fe; font-weight:700;">📺 ลิงก์โดเนทขึ้นจอสตรีม (Alert Overlay)</label>
+            <div style="display: flex; gap: 8px; margin-top: 8px;">
+              <input type="text" id="overlayWidgetLink" readonly style="background: rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.1); font-size:13px;" value="">
+              <button type="button" onclick="copyWidgetLink('overlayWidgetLink')" style="width: auto; padding: 0 15px; font-size: 13px; background: rgba(255,255,255,0.05); box-shadow:none; border: 1px solid rgba(255,255,255,0.1); text-transform:none; font-weight:normal;">คัดลอก</button>
+            </div>
+          </div>
+
+          <!-- Link 3: Goal Widget -->
+          <div>
+            <label style="color: #00ff87; font-weight:700;">🥅 ลิงก์แถบเป้าหมายสะสม (Goal Bar)</label>
+            <div style="display: flex; gap: 8px; margin-top: 8px;">
+              <input type="text" id="goalWidgetLinkDash" readonly style="background: rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.1); font-size:13px;" value="">
+              <button type="button" onclick="copyWidgetLink('goalWidgetLinkDash')" style="width: auto; padding: 0 15px; font-size: 13px; background: rgba(255,255,255,0.05); box-shadow:none; border: 1px solid rgba(255,255,255,0.1); text-transform:none; font-weight:normal;">คัดลอก</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-label">ยอดสนับสนุนทั้งหมด</div>
