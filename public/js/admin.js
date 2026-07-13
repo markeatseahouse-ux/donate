@@ -22,6 +22,9 @@ async function checkAuth() {
     const data = await response.json();
     currentUsername = data.user.username;
     
+    // Populate links into the dashboard inputs immediately
+    populateWidgetLinks();
+    
     // Initialize Dashboard data loads
     initSocket();
     fetchConfig();
