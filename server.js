@@ -31,7 +31,7 @@ function loadConfig() {
     easyslipApiKey: '',
     streamerName: 'SEAHOUSE STREAM',
     streamerDescription: 'ขอบคุณทุกแรงสนับสนุนสำหรับการพัฒนาช่องและคอมมูนิตี้ของเราครับ!',
-    bannedWords: 'ควย,สัส,เหี้ย,มึง,เย็ด,จู๋,หี,แตด,ชิบหาย,ฟาย,shyt,darn,fck', // Removed "อม" and "กู" from defaults to prevent false matches
+    bannedWords: 'ควย,สัส,เหี้ย,มึง,เย็ด,จู๋,หี,แตด,ชิบหาย,ฟาย,shyt,darn,fck', // Default word filters
     requireApproval: false,
     minAmountTts: 1,
     ttsSpeed: 1.0,
@@ -44,7 +44,9 @@ function loadConfig() {
     goalEnabled: false,
     goalTitle: 'สมทบทุนซื้ออุปกรณ์สตรีม',
     goalTarget: 5000,
-    goalCurrent: 0
+    goalCurrent: 0,
+    viewerAccentColor: '#8a2be2', // Default purple accent for viewer page
+    viewerBannerFile: '' // Optional custom banner
   };
 
   if (!fs.existsSync(CONFIG_PATH)) {
@@ -75,7 +77,9 @@ function loadConfig() {
       goalEnabled: diskConfig.goalEnabled !== undefined ? diskConfig.goalEnabled : defaults.goalEnabled,
       goalTitle: diskConfig.goalTitle || defaults.goalTitle,
       goalTarget: diskConfig.goalTarget !== undefined ? Number(diskConfig.goalTarget) : defaults.goalTarget,
-      goalCurrent: diskConfig.goalCurrent !== undefined ? Number(diskConfig.goalCurrent) : defaults.goalCurrent
+      goalCurrent: diskConfig.goalCurrent !== undefined ? Number(diskConfig.goalCurrent) : defaults.goalCurrent,
+      viewerAccentColor: diskConfig.viewerAccentColor || defaults.viewerAccentColor,
+      viewerBannerFile: diskConfig.viewerBannerFile || defaults.viewerBannerFile
     };
   } catch (err) {
     console.error('Error reading config.json, using defaults', err);
@@ -262,7 +266,8 @@ app.post('/api/config', (req, res) => {
     promptpayId, verifyMode, easyslipApiKey, streamerName, streamerDescription,
     bannedWords, requireApproval, minAmountTts, ttsSpeed, ttsPitch, soundVolume,
     overlayAccentColor, overlayTextColor, alertAnimation, alertSoundFile,
-    goalEnabled, goalTitle, goalTarget, goalCurrent
+    goalEnabled, goalTitle, goalTarget, goalCurrent,
+    viewerAccentColor, viewerBannerFile
   } = req.body;
 
   if (!promptpayId) {
@@ -288,7 +293,9 @@ app.post('/api/config', (req, res) => {
     goalEnabled: goalEnabled !== undefined ? !!goalEnabled : config.goalEnabled,
     goalTitle: goalTitle || config.goalTitle,
     goalTarget: goalTarget !== undefined ? Number(goalTarget) : config.goalTarget,
-    goalCurrent: goalCurrent !== undefined ? Number(goalCurrent) : config.goalCurrent
+    goalCurrent: goalCurrent !== undefined ? Number(goalCurrent) : config.goalCurrent,
+    viewerAccentColor: viewerAccentColor || config.viewerAccentColor,
+    viewerBannerFile: viewerBannerFile !== undefined ? viewerBannerFile : config.viewerBannerFile
   };
 
   saveConfig(updatedConfig);
@@ -320,6 +327,30 @@ app.post('/api/upload-logo', (req, res) => {
   } catch (error) {
     console.error('Logo upload error:', error);
     res.status(500).json({ error: 'Failed to save logo image file' });
+  }
+});
+
+// Banner Image Upload Endpoint
+app.post('/api/upload-banner', (req, res) => {
+  const { imageBase64 } = req.body;
+  if (!imageBase64) {
+    return res.status(400).json({ error: 'No image data provided' });
+  }
+  
+  try {
+    const buffer = Buffer.from(imageBase64, 'base64');
+    const targetPath = path.join(__dirname, 'public', 'streamer_banner.jpg');
+    
+    fs.writeFileSync(targetPath, buffer);
+    
+    const config = loadConfig();
+    config.viewerBannerFile = 'streamer_banner.jpg';
+    saveConfig(config);
+    
+    res.json({ success: true, message: 'Streamer banner updated successfully' });
+  } catch (error) {
+    console.error('Banner upload error:', error);
+    res.status(500).json({ error: 'Failed to save banner image file' });
   }
 });
 

@@ -1,5 +1,6 @@
 let socket;
 let pendingLogoBase64 = null; // Streamer avatar file storage
+let pendingBannerBase64 = null; // Streamer page banner file storage
 let pendingSoundBase64 = null; // Custom chime file storage
 let pendingSoundFilename = '';
 let currentConfig = {};
@@ -43,18 +44,18 @@ function populateWidgetLinks() {
   if (goalLinkInput) {
     goalLinkInput.value = `${window.location.origin}/goal.html`;
   }
-
+  
   // Populate Dashboard links
   const viewerLink = document.getElementById('viewerPageLink');
   if (viewerLink) {
     viewerLink.value = `${window.location.origin}/index.html`;
   }
-
+  
   const overlayLink = document.getElementById('overlayWidgetLink');
   if (overlayLink) {
     overlayLink.value = `${window.location.origin}/overlay.html`;
   }
-
+  
   const goalDashLink = document.getElementById('goalWidgetLinkDash');
   if (goalDashLink) {
     goalDashLink.value = `${window.location.origin}/goal.html`;
@@ -113,6 +114,7 @@ async function fetchConfig() {
     document.getElementById('easyslipApiKey').value = currentConfig.easyslipApiKey || '';
     document.getElementById('streamerName').value = currentConfig.streamerName || '';
     document.getElementById('streamerDescription').value = currentConfig.streamerDescription || '';
+    document.getElementById('viewerAccentColor').value = currentConfig.viewerAccentColor || '#8a2be2';
 
     // Populate Advanced settings form
     document.getElementById('requireApproval').checked = !!currentConfig.requireApproval;
@@ -143,6 +145,10 @@ async function fetchConfig() {
     // Cache buster for the profile preview image
     const adminLogo = document.getElementById('adminLogoPreview');
     adminLogo.src = `/streamer_logo.jpg?t=${Date.now()}`;
+
+    // Cache buster for the banner preview image
+    const adminBanner = document.getElementById('adminBannerPreview');
+    adminBanner.src = `/streamer_banner.jpg?t=${Date.now()}`;
 
     toggleVerifyFields();
   } catch (error) {
@@ -220,6 +226,21 @@ function setupEventListeners() {
     }
   });
 
+  // Banner file selection preview
+  const bannerInput = document.getElementById('streamerBannerInput');
+  const bannerPreview = document.getElementById('adminBannerPreview');
+  bannerInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        bannerPreview.src = event.target.result;
+        pendingBannerBase64 = event.target.result.split(',')[1];
+      };
+      reader.readAsDataURL(file);
+    }
+  });
+
   // Advanced overlay settings form
   const advConfigForm = document.getElementById('advConfigForm');
   advConfigForm.addEventListener('submit', handleAdvConfigSubmit);
@@ -259,6 +280,7 @@ async function handleConfigSubmit(e) {
   const easyslipApiKey = document.getElementById('easyslipApiKey').value.trim();
   const streamerName = document.getElementById('streamerName').value.trim();
   const streamerDescription = document.getElementById('streamerDescription').value.trim();
+  const viewerAccentColor = document.getElementById('viewerAccentColor').value;
 
   if (!promptpayId) {
     alert('กรุณากรอก PromptPay ID');
@@ -283,11 +305,24 @@ async function handleConfigSubmit(e) {
       pendingLogoBase64 = null; // Reset
     }
 
-    // 2. Save texts config
+    // 2. Upload banner image if selected
+    if (pendingBannerBase64) {
+      console.log('Uploading custom banner...');
+      const uploadBannerRes = await fetch('/api/upload-banner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: pendingBannerBase64 })
+      });
+      const bannerResult = await uploadBannerRes.json();
+      if (!bannerResult.success) throw new Error(bannerResult.error || 'Failed banner upload');
+      pendingBannerBase64 = null; // Reset
+    }
+
+    // 3. Save configs
     const response = await fetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ promptpayId, verifyMode, easyslipApiKey, streamerName, streamerDescription })
+      body: JSON.stringify({ promptpayId, verifyMode, easyslipApiKey, streamerName, streamerDescription, viewerAccentColor })
     });
     
     await response.json();

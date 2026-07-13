@@ -47,6 +47,17 @@ async function fetchConfig() {
     if (avatarImg) {
       avatarImg.src = `/streamer_logo.jpg?t=${Date.now()}`;
     }
+
+    const bannerImg = document.getElementById('streamerBanner');
+    if (bannerImg) {
+      bannerImg.src = `/streamer_banner.jpg?t=${Date.now()}`;
+    }
+
+    // Apply custom page accent styling colors dynamically
+    if (config.viewerAccentColor) {
+      document.documentElement.style.setProperty('--accent-color', config.viewerAccentColor);
+      document.documentElement.style.setProperty('--primary-gradient', `linear-gradient(135deg, ${config.viewerAccentColor} 0%, #ff007f 100%)`);
+    }
   } catch (error) {
     console.error('Error fetching config:', error);
   }

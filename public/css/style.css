@@ -67,8 +67,26 @@ body {
 
 .glass-panel:hover {
   border-color: var(--border-glow);
-  box-shadow: 0 25px 60px rgba(138, 43, 226, 0.25);
+  box-shadow: 0 25px 60px rgba(138, 43, 225, 0.25);
   transform: translateY(-2px);
+}
+
+/* Streamer Banner Container (Bleeds edge-to-edge inside glass card) */
+.streamer-banner-container {
+  margin-top: -40px;
+  margin-left: -35px;
+  margin-right: -35px;
+  height: 125px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  position: relative;
+}
+
+.streamer-banner-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 /* Streamer Branded Profile Header */

@@ -291,6 +291,25 @@
               </div>
             </div>
 
+            <!-- Banner Upload -->
+            <div class="form-group">
+              <label>ภาพแบนเนอร์หน้าโดเนทผู้ชม (Donation Page Banner)</label>
+              <div style="margin-top: 5px; margin-bottom: 10px;">
+                <img id="adminBannerPreview" src="/streamer_banner.jpg" alt="Banner Preview" style="width: 100%; height: 70px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border-color); margin-bottom: 8px;" onerror="this.src='https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80'">
+                <div style="display: flex; gap: 10px; align-items: center;">
+                  <input type="file" id="streamerBannerInput" accept="image/*" style="display: none;">
+                  <button type="button" onclick="document.getElementById('streamerBannerInput').click()" style="width: auto; padding: 10px 16px; font-size: 13px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); box-shadow: none;">อัปโหลดแบนเนอร์ใหม่</button>
+                  <small style="color: var(--text-muted); font-size: 11px;">ขนาดแนะนำ: 600x150px</small>
+                </div>
+              </div>
+            </div>
+
+            <!-- Viewer Accent Color Picker -->
+            <div class="form-group">
+              <label for="viewerAccentColor">โทนสีหลักหน้าโดเนทผู้ชม (Viewer Page Accent Color)</label>
+              <input type="color" id="viewerAccentColor" style="padding:0; height:38px; border:none; cursor:pointer; width:100%; border-radius: 8px;">
+            </div>
+
             <!-- PromptPay ID -->
             <div class="form-group">
               <label for="promptpayId">PromptPay ID (เบอร์โทรศัพท์ หรือ บัตร ปชช.)</label>
