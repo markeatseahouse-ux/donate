@@ -270,6 +270,22 @@
 
     <!-- TAB 5: System Settings & Overlay Customizations -->
     <div id="tab-settings" class="tab-content">
+
+      <!-- Standalone Min Donation Card -->
+      <div class="glass-panel" style="width: 100%; margin-bottom: 20px;">
+        <h2>💰 ยอดเงินสนับสนุนขั้นต่ำ (Minimum Donation Amount)</h2>
+        <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 14px;">กำหนดยอดเงินโดเนทต่ำสุดที่ผู้ชมสามารถส่งได้ — หน้าเว็บผู้ชมจะแสดงยอดนี้และบล็อกการกดหากต่ำกว่ากำหนด</p>
+        <form id="minDonateForm" style="display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;">
+          <div class="form-group" style="flex: 1; min-width: 180px; margin-bottom: 0;">
+            <label for="minDonateAmount" style="color: #00f2fe;">ยอดขั้นต่ำต่อครั้ง (บาท)</label>
+            <input type="number" id="minDonateAmount" min="1" placeholder="เช่น 20" required style="border-color: rgba(0,242,254,0.3);">
+          </div>
+          <button type="submit" id="btnSaveMinDonate" style="width: auto; padding: 14px 28px; background: var(--secondary-gradient); box-shadow: 0 4px 15px rgba(0,242,254,0.3); flex-shrink: 0;">
+            บันทึกยอดขั้นต่ำ
+          </button>
+        </form>
+      </div>
+
       <div class="admin-grid">
         
         <!-- Column 1: Config general & Slip check settings -->
@@ -316,12 +332,7 @@
               <input type="text" id="promptpayId" placeholder="เช่น 0812345678" required>
             </div>
 
-            <!-- Minimum Donation Amount -->
-            <div class="form-group">
-              <label for="minDonateAmount">ยอดเงินสนับสนุนขั้นต่ำต่อครั้ง (Min Donation - THB)</label>
-              <input type="number" id="minDonateAmount" min="1" placeholder="เช่น 10" required>
-              <small style="color: var(--text-muted); font-size: 11px; display: block; margin-top: 4px;">ผู้ชมจะไม่สามารถกดยืนยันเพื่อสร้างรายการโดเนทที่ต่ำกว่ายอดนี้ได้</small>
-            </div>
+
 
             <!-- Streamer Name -->
             <div class="form-group">

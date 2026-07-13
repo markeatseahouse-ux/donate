@@ -267,6 +267,10 @@ function setupEventListeners() {
   const goalForm = document.getElementById('goalForm');
   goalForm.addEventListener('submit', handleGoalSubmit);
 
+  // Standalone min donate form
+  const minDonateForm = document.getElementById('minDonateForm');
+  minDonateForm.addEventListener('submit', handleMinDonateSubmit);
+
   // Test Alert trigger form
   const testForm = document.getElementById('testForm');
   testForm.addEventListener('submit', handleTestAlertSubmit);
@@ -389,6 +393,45 @@ async function handleAdvConfigSubmit(e) {
   } finally {
     btn.disabled = false;
     btn.innerText = 'บันทึกสไตล์ระบบคัดกรอง';
+  }
+}
+
+// Save Minimum Donation Amount independently
+async function handleMinDonateSubmit(e) {
+  e.preventDefault();
+
+  const minDonateAmount = parseFloat(document.getElementById('minDonateAmount').value);
+  if (isNaN(minDonateAmount) || minDonateAmount < 1) {
+    alert('กรุณาระบุยอดขั้นต่ำที่ถูกต้อง (1 บาทขึ้นไป)');
+    return;
+  }
+
+  const btn = document.getElementById('btnSaveMinDonate');
+  btn.disabled = true;
+  btn.innerText = 'กำลังบันทึก...';
+
+  try {
+    const response = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        promptpayId: currentConfig.promptpayId || '0000000000',
+        minDonateAmount
+      })
+    });
+    const data = await response.json();
+    if (data.config) {
+      currentConfig = data.config;
+      alert(`บันทึกยอดขั้นต่ำ ${minDonateAmount} บาทเรียบร้อยแล้ว! หน้าเว็บผู้ชมจะเห็นยอดใหม่ทันที`);
+    } else {
+      alert('เกิดข้อผิดพลาดในการบันทึก');
+    }
+  } catch (err) {
+    console.error('Error saving min donate:', err);
+    alert('เชื่อมต่อเซิร์ฟเวอร์ล้มเหลว');
+  } finally {
+    btn.disabled = false;
+    btn.innerText = 'บันทึกยอดขั้นต่ำ';
   }
 }
 
