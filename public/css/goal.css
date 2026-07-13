@@ -1,0 +1,96 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Sarabun:wght@600;700&display=swap');
+
+body {
+  margin: 0;
+  padding: 10px;
+  background: transparent; /* Transparent for OBS Browser Source */
+  font-family: 'Outfit', 'Sarabun', sans-serif;
+  color: #ffffff;
+  overflow: hidden;
+}
+
+.goal-widget-container {
+  width: 100%;
+  max-width: 600px;
+  background: rgba(8, 4, 21, 0.65);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  border-radius: 16px;
+  padding: 18px 22px;
+  box-sizing: border-box;
+}
+
+.goal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.goal-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
+}
+
+.goal-numbers {
+  font-size: 15px;
+  font-weight: 700;
+  color: #00ff87;
+  text-shadow: 0 0 12px rgba(0, 255, 135, 0.3);
+}
+
+.progress-container {
+  width: 100%;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #8a2be2 0%, #ff007f 100%);
+  box-shadow: 0 0 15px rgba(255, 0, 127, 0.6);
+  border-radius: 14px;
+  width: 0%; /* Dynamic */
+  transition: width 1.2s cubic-bezier(0.19, 1, 0.22, 1);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 12px;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.progress-bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    rgba(255, 255, 255, 0.15) 0%,
+    rgba(255, 255, 255, 0) 50%,
+    rgba(0, 0, 0, 0.25) 100%
+  );
+  border-radius: 14px;
+}
+
+.percentage-text {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+  z-index: 2;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}

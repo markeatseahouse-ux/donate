@@ -1,7 +1,7 @@
 .admin-container {
   width: 100%;
   max-width: 1100px;
-  margin: 40px auto;
+  margin: 30px auto;
   padding: 0 20px;
   display: flex;
   flex-direction: column;
@@ -12,7 +12,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 30px;
+  margin-bottom: 24px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   padding-bottom: 20px;
 }
@@ -44,7 +44,95 @@
   100% { transform: scale(0.9); opacity: 0.8; box-shadow: 0 0 0 0 rgba(0, 255, 135, 0); }
 }
 
-/* Admin Card Grid */
+/* Tabs Navigation */
+.admin-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 25px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 10px;
+  overflow-x: auto;
+}
+
+.tab-btn {
+  padding: 12px 20px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: none;
+  width: auto;
+}
+
+.tab-btn:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  transform: none;
+  box-shadow: none;
+}
+
+.tab-btn.active {
+  background: rgba(138, 43, 226, 0.15);
+  color: #00f2fe;
+  border: 1px solid rgba(138, 43, 226, 0.3);
+}
+
+.tab-content {
+  display: none;
+  animation: tabFadeIn 0.35s ease forwards;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+@keyframes tabFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Dashboard Analytics Grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.stat-card {
+  background: rgba(22, 16, 44, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 24px;
+  text-align: left;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.stat-val {
+  font-size: 32px;
+  font-weight: 700;
+  color: #00ff87;
+  margin-top: 8px;
+  text-shadow: 0 0 10px rgba(0, 255, 135, 0.2);
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+/* Admin Card Grid Layout */
 .admin-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -146,4 +234,80 @@
   font-weight: 600;
   border: 1px solid rgba(255, 170, 0, 0.15);
   display: inline-block;
+}
+
+.status-approval {
+  color: #00f2fe;
+  background: rgba(0, 242, 254, 0.1);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid rgba(0, 242, 254, 0.15);
+  display: inline-block;
+}
+
+.status-rejected {
+  color: #ff4b2b;
+  background: rgba(255, 75, 43, 0.1);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid rgba(255, 75, 43, 0.15);
+  display: inline-block;
+}
+
+/* Slider Controls */
+.range-container {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-top: 8px;
+}
+
+.range-container input[type=range] {
+  flex-grow: 1;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.08);
+  height: 6px;
+  border-radius: 3px;
+  border: none;
+  cursor: pointer;
+}
+
+.range-val {
+  min-width: 45px;
+  font-weight: 700;
+  color: #00f2fe;
+  text-align: right;
+  font-size: 14px;
+}
+
+/* Mod Action Buttons */
+.action-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.approve-btn {
+  background: linear-gradient(135deg, #00ff87 0%, #60efff 100%) !important;
+  color: #080415 !important;
+  padding: 6px 14px !important;
+  font-size: 12.5px !important;
+  border-radius: 8px !important;
+  box-shadow: 0 2px 8px rgba(0, 255, 135, 0.2) !important;
+  width: auto !important;
+  display: inline-flex !important;
+}
+
+.reject-btn {
+  background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%) !important;
+  color: #fff !important;
+  padding: 6px 14px !important;
+  font-size: 12.5px !important;
+  border-radius: 8px !important;
+  box-shadow: 0 2px 8px rgba(255, 75, 43, 0.2) !important;
+  width: auto !important;
+  display: inline-flex !important;
 }

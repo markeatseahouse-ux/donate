@@ -16,7 +16,7 @@
     <header class="admin-header">
       <div>
         <h1 class="gradient-text">DONATE OVERLAY</h1>
-        <p style="color: var(--text-muted); font-size: 14px;">ระบบจัดการและตั้งค่าสตรีมเมอร์ (Control Panel)</p>
+        <p style="color: var(--text-muted); font-size: 14px;">ระบบจัดการและตั้งค่าหลังบ้าน (Control Panel)</p>
       </div>
       <div class="status-indicator">
         <span class="pulse-dot"></span>
@@ -24,129 +24,354 @@
       </div>
     </header>
 
-    <!-- Main Grid Layout -->
-    <div class="admin-grid">
-      
-      <!-- Card 1: Settings Config -->
-      <div class="glass-panel admin-card">
-        <h2>⚙️ ตั้งค่าระบบ (Settings)</h2>
-        <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 14px;">ตั้งค่าบัญชีรับเงินและวิธีการตรวจสอบสลิป</p>
-        
-        <form id="configForm">
-          <div class="form-group">
-            <label>รูปโปรไฟล์ผู้สตรีม (Streamer Profile Image)</label>
-            <div style="display: flex; gap: 15px; align-items: center; margin-top: 5px; margin-bottom: 10px;">
-              <img id="adminLogoPreview" src="/streamer_logo.jpg" alt="Preview" style="width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border-color);">
-              <div>
-                <input type="file" id="streamerLogoInput" accept="image/*" style="display: none;">
-                <button type="button" onclick="document.getElementById('streamerLogoInput').click()" style="width: auto; padding: 10px 16px; font-size: 13px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); box-shadow: none;">เลือกรูปภาพใหม่</button>
-                <small style="display: block; color: var(--text-muted); font-size: 11px; margin-top: 5px;">รองรับรูปภาพ JPG, PNG, GIF</small>
+    <!-- Navigation Tabs Bar -->
+    <nav class="admin-tabs">
+      <button class="tab-btn active" onclick="switchTab('tab-dashboard')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
+        ภาพรวมสถิติ (Dashboard)
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-moderation')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+        คิวรออนุมัติ (Approvals) <span id="approvalBadgeCount" style="background:#ff007f; color:#fff; font-size:10px; font-weight:700; padding:1px 6px; border-radius:10px; margin-left:4px; display:none;">0</span>
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-goal')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>
+        เป้าหมายโดเนท (Donation Goal)
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-logs')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+        ประวัติเงินเข้า (Logs)
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-settings')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        ตั้งค่าระบบ (Settings)
+      </button>
+    </nav>
+
+    <!-- TAB 1: Dashboard Analytics -->
+    <div id="tab-dashboard" class="tab-content active">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">ยอดสนับสนุนทั้งหมด</div>
+          <div class="stat-val" id="stat-total-amount">0.00 THB</div>
+        </div>
+        <div class="stat-card" style="border-color: rgba(0, 242, 254, 0.2);">
+          <div class="stat-label">ยอดสนับสนุนวันนี้</div>
+          <div class="stat-val" id="stat-today-amount" style="color: #00f2fe; text-shadow: 0 0 10px rgba(0, 242, 254, 0.2);">0.00 THB</div>
+        </div>
+        <div class="stat-card" style="border-color: rgba(255, 0, 127, 0.2);">
+          <div class="stat-label">จำนวนรอตรวจอนุมัติ</div>
+          <div class="stat-val" id="stat-pending-approvals" style="color: #ff007f; text-shadow: 0 0 10px rgba(255, 0, 127, 0.2);">0</div>
+        </div>
+      </div>
+
+      <div class="admin-grid">
+        <!-- Top Donators List -->
+        <div class="glass-panel admin-card">
+          <h2>🏆 ทำเนียบผู้สนับสนุนสูงสุด (Top 10 Donators)</h2>
+          <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 14px;">สรุปอันดับผู้เปย์ยอดสูงสุดแบบสะสม</p>
+          <div class="table-container">
+            <table class="donation-table" style="font-size: 14px;">
+              <thead>
+                <tr>
+                  <th>อันดับ</th>
+                  <th>ชื่อผู้สนับสนุน</th>
+                  <th style="text-align: right;">ยอดสนับสนุนรวม</th>
+                </tr>
+              </thead>
+              <tbody id="topDonatorsList">
+                <tr>
+                  <td colspan="3" style="text-align: center; color: var(--text-muted); padding: 20px;">ไม่มีข้อมูลสถิติ</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Quick Test form inside Dashboard -->
+        <div class="glass-panel admin-card">
+          <h2>📢 ยิงโดเนททดสอบ (Test Alerts)</h2>
+          <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 14px;">ทดสอบการแสดงผล ข้อความ อนิเมชัน และเสียงอ่านแจ้งเตือน</p>
+          
+          <form id="testForm">
+            <div class="form-group">
+              <label for="testName">ชื่อผู้โดเนท</label>
+              <input type="text" id="testName" value="พี่เก่งสายเปย์">
+            </div>
+            
+            <div class="form-group">
+              <label for="testMessage">ข้อความโดเนท</label>
+              <input type="text" id="testMessage" value="สู้ๆ ครับสตรีมเมอร์ สู้ต่อไปอย่ายอมแพ้ Keep going bro!">
+            </div>
+            
+            <div class="form-group">
+              <label>จำนวนเงินด่วน (Quick Presets)</label>
+              <div class="quick-buttons">
+                <button type="button" class="preset-btn" onclick="sendQuickTest(50)">50 บาท</button>
+                <button type="button" class="preset-btn" onclick="sendQuickTest(150)">150 บาท</button>
+                <button type="button" class="preset-btn" onclick="sendQuickTest(500)">500 บาท</button>
               </div>
             </div>
-          </div>
 
-          <div class="form-group">
-            <label for="promptpayId">PromptPay ID (เบอร์โทรศัพท์ หรือ บัตร ปชช.)</label>
-            <input type="text" id="promptpayId" placeholder="เช่น 0812345678 หรือ 1234567890123" required>
-            <small style="color: var(--text-muted); font-size: 12px; display: block; margin-top: 4px;">หมายเลขเบอร์โทรศัพท์ต้องเริ่มต้นด้วย 0 (ระบบจะแปลงเป็นรหัสประเทศให้อัตโนมัติ)</small>
-          </div>
-
-          <div class="form-group">
-            <label for="streamerName">ชื่อผู้สตรีม (Streamer Name)</label>
-            <input type="text" id="streamerName" placeholder="เช่น SEAHOUSE STREAM" required>
-          </div>
-
-          <div class="form-group">
-            <label for="streamerDescription">รายละเอียดช่อง / ข้อความต้อนรับ (Greeting Message)</label>
-            <textarea id="streamerDescription" placeholder="เช่น ยินดีต้อนรับเข้าสู่หน้าโดเนทสนับสนุนช่องครับ!" rows="2" style="font-family: inherit; resize: vertical;"></textarea>
-          </div>
-          
-          <div class="form-group">
-            <label for="verifyMode">วิธีการตรวจสอบชำระเงิน</label>
-            <select id="verifyMode" onchange="toggleVerifyFields()">
-              <option value="simulate">(Recommended) โหมดจำลองยอดเงิน (Simulation Mode)</option>
-              <option value="easyslip">โหมดตรวจสอบสลิปจริง (EasySlip Real-time API)</option>
-            </select>
-          </div>
-          
-          <!-- EasySlip Settings Fields -->
-          <div id="easyslip-settings" style="display: none; animation: fadeIn 0.3s ease;">
             <div class="form-group">
-              <label for="easyslipApiKey">EasySlip API Key (App Key)</label>
-              <input type="password" id="easyslipApiKey" placeholder="ใส่รหัสลับ API Key (Bearer Token) จาก EasySlip">
+              <label for="testAmount">หรือระบุจำนวนเงินเอง (บาท)</label>
+              <input type="number" id="testAmount" value="99">
             </div>
-            <p style="font-size: 12px; color: #ffaa00; margin-bottom: 16px;">
-              ⚠️ ต้องใช้ API Key ที่สมัครผ่านเว็บ <a href="https://developer.easyslip.com" target="_blank" style="color: #4facfe;">developer.easyslip.com</a> เพื่อตรวจสอบสลิปผ่านธนาคารจริง
-            </p>
-          </div>
-          
-          <button type="submit" id="btnSaveConfig">บันทึกการตั้งค่า</button>
-        </form>
+
+            <button type="submit" style="background: var(--secondary-gradient); box-shadow: 0 4px 15px rgba(0, 242, 254, 0.3);">
+              ส่งโดเนททดสอบ (Trigger Alert)
+            </button>
+          </form>
+        </div>
       </div>
-
-      <!-- Card 2: Quick Test Alerts Trigger -->
-      <div class="glass-panel admin-card">
-        <h2>📢 ยิงโดเนททดสอบ (Test Alerts)</h2>
-        <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 14px;">ทดสอบการแสดงผล อนิเมชัน และเสียงอ่านข้อความโดเนท</p>
-        
-        <form id="testForm">
-          <div class="form-group">
-            <label for="testName">ชื่อผู้โดเนท</label>
-            <input type="text" id="testName" value="พี่เก่งสายเปย์">
-          </div>
-          
-          <div class="form-group">
-            <label for="testMessage">ข้อความโดเนท</label>
-            <input type="text" id="testMessage" value="สู้ๆ ครับสตรีมเมอร์ สู้ต่อไปอย่ายอมแพ้ Keep going bro!">
-          </div>
-          
-          <div class="form-group">
-            <label>จำนวนเงินด่วน (Quick Presets)</label>
-            <div class="quick-buttons">
-              <button type="button" class="preset-btn" onclick="sendQuickTest(50)">50 บาท</button>
-              <button type="button" class="preset-btn" onclick="sendQuickTest(150)">150 บาท</button>
-              <button type="button" class="preset-btn" onclick="sendQuickTest(500)">500 บาท</button>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label for="testAmount">หรือระบุจำนวนเงินเอง (บาท)</label>
-            <input type="number" id="testAmount" value="99">
-          </div>
-
-          <button type="submit" style="background: var(--secondary-gradient); box-shadow: 0 4px 15px rgba(0, 242, 254, 0.3);">
-            ส่งโดเนททดสอบ (Trigger Alert)
-          </button>
-        </form>
-      </div>
-
     </div>
 
-    <!-- Table: Donation Logs -->
-    <div class="glass-panel mt-4" style="width: 100%;">
-      <h2>📋 ประวัติการโดเนท (Donation Logs)</h2>
-      <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 14px;">รายการที่มีการสแกนและยืนยันชำระเงินเข้ามาในระบบทั้งหมด</p>
-      
-      <div class="table-container">
-        <table class="donation-table">
-          <thead>
-            <tr>
-              <th>เวลา</th>
-              <th>ชื่อผู้โดเนท</th>
-              <th>ข้อความ</th>
-              <th>จำนวนเงิน</th>
-              <th>สถานะ</th>
-              <th>ประเภทการตรวจ</th>
-            </tr>
-          </thead>
-          <tbody id="logTableBody">
-            <tr>
-              <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 40px;">
-                ไม่มีประวัติการโดเนทในปัจจุบัน
-              </td>
-            </tr>
-          </tbody>
-        </table>
+    <!-- TAB 2: Moderation Approval Queue -->
+    <div id="tab-moderation" class="tab-content">
+      <div class="glass-panel" style="width: 100%;">
+        <h2>⏱ รายการกักตรวจข้อความออกจอ (Moderator Approval Queue)</h2>
+        <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 14px;">แสดงรายการที่คนดูสแกนจ่ายเงินสำเร็จแล้ว แต่เปิดโหมดกักตรวจสอบไว้ กรุณากดปุ่มอนุมัติเพื่อให้อลาร์ตแสดงบน OBS</p>
+        
+        <div class="table-container">
+          <table class="donation-table">
+            <thead>
+              <tr>
+                <th>เวลาโอน</th>
+                <th>ชื่อผู้โดเนท</th>
+                <th>ข้อความ</th>
+                <th>จำนวนเงิน</th>
+                <th>วิธีการตรวจ</th>
+                <th>จัดการอนุมัติ</th>
+              </tr>
+            </thead>
+            <tbody id="queueTableBody">
+              <tr>
+                <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 40px;">
+                  ไม่มีรายการรอการอนุมัติในขณะนี้
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: Donation Goal Settings -->
+    <div id="tab-goal" class="tab-content">
+      <div class="glass-panel" style="width: 100%;">
+        <h2>🥅 ระบบสะสมเป้าหมายโดเนท (Donation Goal Settings)</h2>
+        <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 14px;">สร้างแถบความคืบหน้าของยอดเงินสนับสนุนเพื่อแปะเป็นหน้าจอ Browser Source แยกต่างหากบนโปรแกรม OBS</p>
+        
+        <form id="goalForm">
+          <div class="form-group">
+            <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; text-transform:none; letter-spacing:0;">
+              <input type="checkbox" id="goalEnabled" style="width: 18px; height: 18px; margin:0;">
+              <strong>เปิดใช้งานเป้าหมายสนับสนุน (Enable Goal Widget)</strong>
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label for="goalTitle">หัวข้อเป้าหมาย (Goal Title)</label>
+            <input type="text" id="goalTitle" placeholder="เช่น สมทบทุนซื้อคอมพิวเตอร์ตัวใหม่">
+          </div>
+
+          <div class="form-group">
+            <label for="goalTarget">เป้าหมายยอดเงินสะสม (Target Amount - THB)</label>
+            <input type="number" id="goalTarget" placeholder="ยอดสูงสุด เช่น 10000" min="1">
+          </div>
+
+          <div class="form-group">
+            <label for="goalCurrent">ปรับแก้ยอดเงินปัจจุบัน (Current Progress - THB)</label>
+            <input type="number" id="goalCurrent" placeholder="ปรับยอดในกรณีต้องการบวกเพิ่มมือหลัก" min="0">
+            <small style="color: var(--text-muted); font-size: 12px; display:block; margin-top:4px;">ระบบจะเพิ่มยอดนี้ให้อัตโนมัติเมื่อมีคนสแกนจ่ายสำเร็จ แต่คุณสามารถปรับแก้ไขมือตรงนี้ได้</small>
+          </div>
+
+          <button type="submit" id="btnSaveGoal" style="background: var(--success-gradient); color: #080415; width: auto; padding: 12px 30px;">
+            บันทึกเป้าหมาย
+          </button>
+        </form>
+
+        <div style="margin-top: 30px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px;">
+          <h3>🔗 ลิงก์สำหรับใส่โปรแกรม OBS (Browser Source Link):</h3>
+          <p style="color: var(--text-muted); font-size: 13.5px; margin-top: 6px;">ก๊อปปี้ลิงก์ด้านล่างไปใส่ใน OBS Source ตั้งขนาดความกว้างเป็น <b>600px</b> และความสูงเป็น <b>150px</b>:</p>
+          <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <input type="text" id="goalWidgetLink" readonly style="flex-grow:1; background: rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.1);" value="">
+            <button type="button" onclick="copyWidgetLink('goalWidgetLink')" style="width: auto; padding: 0 20px; font-size: 14px; background: rgba(255,255,255,0.05); box-shadow:none; border: 1px solid rgba(255,255,255,0.1);">คัดลอกลิงก์</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: Donation Logs -->
+    <div id="tab-logs" class="tab-content">
+      <div class="glass-panel" style="width: 100%;">
+        <h2>📋 ประวัติการโดเนททั้งหมด (Donation Logs)</h2>
+        <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 14px;">รายการโดเนทที่มีการสร้างและชำระเงินในระบบทั้งหมด</p>
+        
+        <div class="table-container">
+          <table class="donation-table">
+            <thead>
+              <tr>
+                <th>เวลาสร้าง</th>
+                <th>ชื่อผู้โดเนท</th>
+                <th>ข้อความ</th>
+                <th>จำนวนเงิน</th>
+                <th>สถานะ</th>
+                <th>ประเภทการตรวจ</th>
+              </tr>
+            </thead>
+            <tbody id="logTableBody">
+              <tr>
+                <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 40px;">
+                  ไม่มีประวัติการโดเนทในปัจจุบัน
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: System Settings & Overlay Customizations -->
+    <div id="tab-settings" class="tab-content">
+      <div class="admin-grid">
+        
+        <!-- Column 1: Config general & Slip check settings -->
+        <div class="glass-panel admin-card">
+          <h2>⚙️ ตั้งค่าพื้นหลังโดเนท & ตรวจสอบ</h2>
+          <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 14px;">ตั้งค่าบัญชี PromptPay คีย์ตรวจสลิป และชื่อโปรไฟล์ของคุณ</p>
+          
+          <form id="configForm">
+            <!-- Logo Upload -->
+            <div class="form-group">
+              <label>รูปโปรไฟล์ผู้สตรีม (Streamer Profile Image)</label>
+              <div style="display: flex; gap: 15px; align-items: center; margin-top: 5px; margin-bottom: 10px;">
+                <img id="adminLogoPreview" src="/streamer_logo.jpg" alt="Preview" style="width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border-color);">
+                <div>
+                  <input type="file" id="streamerLogoInput" accept="image/*" style="display: none;">
+                  <button type="button" onclick="document.getElementById('streamerLogoInput').click()" style="width: auto; padding: 10px 16px; font-size: 13px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); box-shadow: none;">เลือกรูปภาพใหม่</button>
+                  <small style="display: block; color: var(--text-muted); font-size: 11px; margin-top: 5px;">รองรับรูปภาพ JPG, PNG, GIF</small>
+                </div>
+              </div>
+            </div>
+
+            <!-- PromptPay ID -->
+            <div class="form-group">
+              <label for="promptpayId">PromptPay ID (เบอร์โทรศัพท์ หรือ บัตร ปชช.)</label>
+              <input type="text" id="promptpayId" placeholder="เช่น 0812345678" required>
+            </div>
+
+            <!-- Streamer Name -->
+            <div class="form-group">
+              <label for="streamerName">ชื่อผู้สตรีม (Streamer Name)</label>
+              <input type="text" id="streamerName" placeholder="เช่น SEAHOUSE STREAM" required>
+            </div>
+
+            <!-- Description -->
+            <div class="form-group">
+              <label for="streamerDescription">รายละเอียดช่อง / ข้อความต้อนรับ (Greeting Message)</label>
+              <textarea id="streamerDescription" placeholder="เขียนข้อความทักทายคนดู" rows="2" style="font-family: inherit; resize: vertical;"></textarea>
+            </div>
+            
+            <!-- Verify Mode select -->
+            <div class="form-group">
+              <label for="verifyMode">วิธีการตรวจสอบชำระเงิน</label>
+              <select id="verifyMode" onchange="toggleVerifyFields()">
+                <option value="simulate">(Recommended) โหมดจำลองยอดเงิน (Simulation Mode)</option>
+                <option value="easyslip">โหมดตรวจสอบสลิปจริง (EasySlip Real-time API)</option>
+              </select>
+            </div>
+            
+            <!-- EasySlip fields -->
+            <div id="easyslip-settings" style="display: none; animation: fadeIn 0.3s ease;">
+              <div class="form-group">
+                <label for="easyslipApiKey">EasySlip API Key (App Key)</label>
+                <input type="password" id="easyslipApiKey" placeholder="ใส่รหัสลับ API Key จาก EasySlip">
+              </div>
+              <p style="font-size: 12px; color: #ffaa00; margin-bottom: 16px;">
+                ⚠️ ต้องใช้ API Key ที่สมัครผ่านเว็บ <a href="https://developer.easyslip.com" target="_blank" style="color: #4facfe;">developer.easyslip.com</a> เพื่อตรวจสอบสลิปจริง
+              </p>
+            </div>
+            
+            <button type="submit" id="btnSaveConfig">บันทึกการตั้งค่า</button>
+          </form>
+        </div>
+
+        <!-- Column 2: Advanced Custom Overlay Settings (sound, colors, moderation) -->
+        <div class="glass-panel admin-card">
+          <h2>🎨 ตั้งค่าสไตล์แจ้งเตือน & การควบคุมเนื้อหา</h2>
+          <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 14px;">ปรับแต่งเสียง ปรับความเร็วอ่านข้อความ กรองคำหยาบ และโทนสีการ์ด</p>
+          
+          <form id="advConfigForm">
+            <!-- Custom Sound Chime Upload -->
+            <div class="form-group">
+              <label>อัปโหลดไฟล์เสียงแจ้งเตือน (Custom Sound Notification)</label>
+              <div style="display: flex; gap: 12px; align-items: center; margin-top: 5px; margin-bottom: 8px;">
+                <input type="file" id="soundFileInput" accept="audio/mpeg,audio/wav,audio/ogg" style="display: none;">
+                <button type="button" onclick="document.getElementById('soundFileInput').click()" style="width: auto; padding: 10px 16px; font-size: 13px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); box-shadow: none;">อัปโหลดเสียงใหม่ (.mp3, .wav)</button>
+                <span id="currentSoundText" style="font-size: 12.5px; color: var(--text-muted); text-overflow:ellipsis; overflow:hidden; white-space:nowrap; max-width:180px;">ใช้เสียงกระดิ่งดนตรีเดิม</span>
+              </div>
+            </div>
+
+            <!-- Volume Slider -->
+            <div class="form-group">
+              <label>ความดังของเสียงเตือน & เสียงอ่าน (Alert Volume)</label>
+              <div class="range-container">
+                <input type="range" id="soundVolume" min="0" max="1" step="0.05" oninput="updateRangeText('volumeVal', this.value)">
+                <span class="range-val" id="volumeVal">0.80</span>
+              </div>
+            </div>
+
+            <!-- Speed Slider -->
+            <div class="form-group">
+              <label>ความเร็วเสียงอ่านข้อความภาษาไทย/Eng (TTS Read Speed)</label>
+              <div class="range-container">
+                <input type="range" id="ttsSpeed" min="0.75" max="1.5" step="0.05" oninput="updateRangeText('speedVal', this.value)">
+                <span class="range-val" id="speedVal">1.00</span>
+              </div>
+            </div>
+
+            <!-- Min Amount for TTS -->
+            <div class="form-group">
+              <label for="minAmountTts">จำนวนเงินขั้นต่ำที่เปิดให้อ่านข้อความ (Min Amount for TTS - Baht)</label>
+              <input type="number" id="minAmountTts" min="1" placeholder="เช่น 20 บาท">
+              <small style="color: var(--text-muted); font-size: 12px; display:block; margin-top:4px;">ยอดโดเนทที่น้อยกว่าจำนวนนี้จะเล่นเพียงเสียงเตือนแจ้งขึ้นจอปกติ แต่จะไม่อ่านออกเสียง</small>
+            </div>
+
+            <!-- Colors Accent selection -->
+            <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+              <div>
+                <label for="overlayAccentColor">โทนสีหลัก (Accent Color)</label>
+                <input type="color" id="overlayAccentColor" style="padding:0; height:40px; border:none; cursor:pointer;">
+              </div>
+              <div>
+                <label for="overlayTextColor">สีอักษรชื่อสตรีม (Text Color)</label>
+                <input type="color" id="overlayTextColor" style="padding:0; height:40px; border:none; cursor:pointer;">
+              </div>
+            </div>
+
+            <!-- Moderation Approval flag -->
+            <div class="form-group">
+              <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; text-transform:none; letter-spacing:0;">
+                <input type="checkbox" id="requireApproval" style="width: 18px; height: 18px; margin:0;">
+                <strong>เปิดโหมดคัดกรองข้อความ (Require Moderator Approval Queue)</strong>
+              </label>
+              <small style="color: var(--text-muted); font-size: 12px; display:block; margin-top:4px;">หากเปิดใช้งาน แจ้งเตือนสแกนเงินสำเร็จจะเข้าคิวรออนุมัติในแท็บ "คิวรออนุมัติ" และยังไม่เด้งขึ้นหน้าจอ OBS จนกว่าสตรีมเมอร์หรือแอดมินจะกดอนุมัติ</small>
+            </div>
+
+            <!-- Banned Words list -->
+            <div class="form-group">
+              <label for="bannedWords">คำหยาบคาย / คำที่ต้องกรองเซ็นเซอร์ (คั่นด้วยเครื่องหมายจุลภาค , )</label>
+              <textarea id="bannedWords" placeholder="เช่น ควย, สัส, คำหยาบ" rows="2" style="font-family: inherit; resize: vertical; font-size: 13.5px;"></textarea>
+              <small style="color: var(--text-muted); font-size: 12px; display:block; margin-top:4px;">ระบบจะทำการเซ็นเซอร์คำที่ระบุเหล่านี้เป็นเครื่องหมาย *** ทั้งบนจอและเสียงอ่านโดเนท</small>
+            </div>
+
+            <button type="submit" id="btnSaveAdvConfig" style="background: var(--primary-gradient); font-weight:700;">
+              บันทึกสไตล์ระบบคัดกรอง
+            </button>
+          </form>
+
+        </div>
       </div>
     </div>
 

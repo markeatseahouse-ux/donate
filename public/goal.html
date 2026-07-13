@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Donation Goal Widget</title>
+  <link rel="stylesheet" href="/css/goal.css">
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+
+  <div class="goal-widget-container" id="goalWidget" style="display: none;">
+    <div class="goal-header">
+      <span class="goal-title" id="goalTitle">เป้าหมายสนับสนุน</span>
+      <span class="goal-numbers" id="goalNumbers">0.00 / 0.00 THB</span>
+    </div>
+    
+    <div class="progress-container">
+      <div class="progress-bar-fill" id="goalBarFill" style="width: 0%;">
+        <span class="percentage-text" id="goalPercentText">0%</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/goal.js"></script>
+</body>
+</html>

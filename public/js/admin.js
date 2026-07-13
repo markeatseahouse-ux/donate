@@ -1,11 +1,16 @@
 let socket;
-let pendingLogoBase64 = null; // Holds base64 data for upload
+let pendingLogoBase64 = null; // Streamer avatar file storage
+let pendingSoundBase64 = null; // Custom chime file storage
+let pendingSoundFilename = '';
+let currentConfig = {};
 
 document.addEventListener('DOMContentLoaded', () => {
   initSocket();
   fetchConfig();
+  fetchStats();
   fetchDonations();
-  setupFormHandlers();
+  setupEventListeners();
+  populateWidgetLinks();
 });
 
 // Init Socket connection
@@ -13,26 +18,111 @@ function initSocket() {
   socket = io();
 
   socket.on('connect', () => {
-    console.log('Admin connected to WebSocket');
+    console.log('Admin dashboard connected to WebSocket');
   });
 
-  // When a donation completes, refresh the logs in real-time
+  // Listen for real-time payments or queues to trigger updates
   socket.on('donation-alert', () => {
-    fetchDonations();
+    refreshAllData();
+  });
+
+  socket.on('admin-pending-approval', () => {
+    refreshAllData();
   });
 }
+
+// Refresh all stats, queue tables and logs
+function refreshAllData() {
+  fetchStats();
+  fetchDonations();
+}
+
+// Populate the widget browser source link
+function populateWidgetLinks() {
+  const goalLinkInput = document.getElementById('goalWidgetLink');
+  if (goalLinkInput) {
+    goalLinkInput.value = `${window.location.origin}/goal.html`;
+  }
+}
+
+// Helper to switch dashboard tabs
+window.switchTab = function(tabId) {
+  // Toggle tab buttons active class
+  const tabButtons = document.querySelectorAll('.tab-btn');
+  tabButtons.forEach(btn => {
+    if (btn.getAttribute('onclick').includes(tabId)) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+
+  // Toggle content panels active class
+  const tabContents = document.querySelectorAll('.tab-content');
+  tabContents.forEach(content => {
+    if (content.id === tabId) {
+      content.classList.add('active');
+    } else {
+      content.classList.remove('active');
+    }
+  });
+};
+
+// Copy widget browser source link to clipboard
+window.copyWidgetLink = function(inputId) {
+  const copyText = document.getElementById(inputId);
+  copyText.select();
+  copyText.setSelectionRange(0, 99999); // For mobile devices
+  
+  navigator.clipboard.writeText(copyText.value)
+    .then(() => alert('คัดลอกลิงก์เรียบร้อยแล้ว! นำไปใส่ใน Browser Source ของ OBS ได้ทันที'))
+    .catch(err => console.error('Failed to copy widget link:', err));
+};
+
+// Helper to update slider labels in settings
+window.updateRangeText = function(spanId, value) {
+  const val = Number(value);
+  document.getElementById(spanId).innerText = val.toFixed(2);
+};
 
 // Fetch current configurations
 async function fetchConfig() {
   try {
     const response = await fetch('/api/config');
-    const config = await response.json();
+    currentConfig = await response.json();
 
-    document.getElementById('promptpayId').value = config.promptpayId || '';
-    document.getElementById('verifyMode').value = config.verifyMode || 'simulate';
-    document.getElementById('easyslipApiKey').value = config.easyslipApiKey || '';
-    document.getElementById('streamerName').value = config.streamerName || '';
-    document.getElementById('streamerDescription').value = config.streamerDescription || '';
+    // Populate Settings form
+    document.getElementById('promptpayId').value = currentConfig.promptpayId || '';
+    document.getElementById('verifyMode').value = currentConfig.verifyMode || 'simulate';
+    document.getElementById('easyslipApiKey').value = currentConfig.easyslipApiKey || '';
+    document.getElementById('streamerName').value = currentConfig.streamerName || '';
+    document.getElementById('streamerDescription').value = currentConfig.streamerDescription || '';
+
+    // Populate Advanced settings form
+    document.getElementById('requireApproval').checked = !!currentConfig.requireApproval;
+    document.getElementById('minAmountTts').value = currentConfig.minAmountTts || 1;
+    document.getElementById('soundVolume').value = currentConfig.soundVolume !== undefined ? currentConfig.soundVolume : 0.8;
+    updateRangeText('volumeVal', currentConfig.soundVolume !== undefined ? currentConfig.soundVolume : 0.8);
+    
+    document.getElementById('ttsSpeed').value = currentConfig.ttsSpeed !== undefined ? currentConfig.ttsSpeed : 1.0;
+    updateRangeText('speedVal', currentConfig.ttsSpeed !== undefined ? currentConfig.ttsSpeed : 1.0);
+    
+    document.getElementById('overlayAccentColor').value = currentConfig.overlayAccentColor || '#ff007f';
+    document.getElementById('overlayTextColor').value = currentConfig.overlayTextColor || '#ffffff';
+    document.getElementById('bannedWords').value = currentConfig.bannedWords || '';
+    
+    const soundText = document.getElementById('currentSoundText');
+    if (currentConfig.alertSoundFile) {
+      soundText.innerText = currentConfig.alertSoundFile;
+    } else {
+      soundText.innerText = 'ใช้เสียงกระดิ่งดนตรีเดิม';
+    }
+
+    // Populate Goal tab form
+    document.getElementById('goalEnabled').checked = !!currentConfig.goalEnabled;
+    document.getElementById('goalTitle').value = currentConfig.goalTitle || '';
+    document.getElementById('goalTarget').value = currentConfig.goalTarget || 5000;
+    document.getElementById('goalCurrent').value = currentConfig.goalCurrent || 0;
 
     // Cache buster for the profile preview image
     const adminLogo = document.getElementById('adminLogoPreview');
@@ -40,7 +130,7 @@ async function fetchConfig() {
 
     toggleVerifyFields();
   } catch (error) {
-    console.error('Error fetching config:', error);
+    console.error('Error loading config:', error);
   }
 }
 
@@ -55,112 +145,254 @@ function toggleVerifyFields() {
   }
 }
 
-// Fetch all donation logs
+// Fetch stats panel analytics
+async function fetchStats() {
+  try {
+    const response = await fetch('/api/stats');
+    const stats = await response.json();
+
+    document.getElementById('stat-total-amount').innerText = `${stats.totalAmount.toFixed(2)} THB`;
+    document.getElementById('stat-today-amount').innerText = `${stats.todayAmount.toFixed(2)} THB`;
+    document.getElementById('stat-pending-approvals').innerText = stats.approvalCount;
+
+    // Moderation queue badge in tab bar
+    const badge = document.getElementById('approvalBadgeCount');
+    if (stats.approvalCount > 0) {
+      badge.innerText = stats.approvalCount;
+      badge.style.display = 'inline-block';
+    } else {
+      badge.style.display = 'none';
+    }
+
+    renderTopDonatorsTable(stats.topDonators);
+  } catch (error) {
+    console.error('Error fetching statistics:', error);
+  }
+}
+
+// Fetch and render table log history & approval queue
 async function fetchDonations() {
   try {
     const response = await fetch('/api/donations');
     const donations = await response.json();
+    
     renderDonationsTable(donations);
+    renderQueueTable(donations);
   } catch (error) {
-    console.error('Error fetching donations:', error);
+    console.error('Error fetching logs:', error);
   }
 }
 
-// Setup form submit events
-function setupFormHandlers() {
-  // Handle local image file selection
+// Setup file pickers and forms submit events
+function setupEventListeners() {
+  // General config form
+  const configForm = document.getElementById('configForm');
+  configForm.addEventListener('submit', handleConfigSubmit);
+
+  // Logo file selection preview
   const logoInput = document.getElementById('streamerLogoInput');
   const logoPreview = document.getElementById('adminLogoPreview');
-
   logoInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = (event) => {
-        logoPreview.src = event.target.result; // Display preview locally
-        pendingLogoBase64 = event.target.result.split(',')[1]; // Capture base64 portion
+        logoPreview.src = event.target.result;
+        pendingLogoBase64 = event.target.result.split(',')[1];
       };
       reader.readAsDataURL(file);
     }
   });
 
-  // Save Settings Form
-  const configForm = document.getElementById('configForm');
-  configForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
+  // Advanced overlay settings form
+  const advConfigForm = document.getElementById('advConfigForm');
+  advConfigForm.addEventListener('submit', handleAdvConfigSubmit);
 
-    const promptpayId = document.getElementById('promptpayId').value.trim();
-    const verifyMode = document.getElementById('verifyMode').value;
-    const easyslipApiKey = document.getElementById('easyslipApiKey').value.trim();
-    const streamerName = document.getElementById('streamerName').value.trim();
-    const streamerDescription = document.getElementById('streamerDescription').value.trim();
-
-    if (!promptpayId) {
-      alert('กรุณากรอก PromptPay ID');
-      return;
-    }
-
-    const btn = document.getElementById('btnSaveConfig');
-    btn.disabled = true;
-    btn.innerText = 'กำลังบันทึก...';
-
-    try {
-      // Step 1: Upload profile picture first if a new one was selected
-      if (pendingLogoBase64) {
-        console.log('Uploading new streamer logo image...');
-        const logoUploadResponse = await fetch('/api/upload-logo', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64: pendingLogoBase64 })
-        });
-        
-        const logoUploadResult = await logoUploadResponse.json();
-        if (!logoUploadResult.success) {
-          throw new Error(logoUploadResult.error || 'Failed to upload profile image');
-        }
-        pendingLogoBase64 = null; // Clear pending state
-      }
-
-      // Step 2: Upload other configurations
-      const response = await fetch('/api/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ promptpayId, verifyMode, easyslipApiKey, streamerName, streamerDescription })
-      });
-
-      await response.json();
-      alert('บันทึกการตั้งค่าทั้งหมดเรียบร้อยแล้ว');
-      fetchConfig(); // Reload and refresh cache bust
-    } catch (error) {
-      console.error('Error saving configurations:', error);
-      alert('บันทึกการตั้งค่าล้มเหลว: ' + error.message);
-    } finally {
-      btn.disabled = false;
-      btn.innerText = 'บันทึกการตั้งค่า';
+  // Sound file selection capture
+  const soundInput = document.getElementById('soundFileInput');
+  const soundText = document.getElementById('currentSoundText');
+  soundInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      soundText.innerText = `กำลังเลือก: ${file.name}`;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        pendingSoundBase64 = event.target.result.split(',')[1];
+        pendingSoundFilename = file.name;
+        soundText.innerText = file.name + ' (พร้อมบันทึก)';
+      };
+      reader.readAsDataURL(file);
     }
   });
 
-  // Submit Test Alert Form
+  // Goal configurations form
+  const goalForm = document.getElementById('goalForm');
+  goalForm.addEventListener('submit', handleGoalSubmit);
+
+  // Test Alert trigger form
   const testForm = document.getElementById('testForm');
-  testForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const name = document.getElementById('testName').value.trim();
-    const message = document.getElementById('testMessage').value.trim();
-    const amount = parseFloat(document.getElementById('testAmount').value);
-
-    await triggerTestAlert(name, message, amount);
-  });
+  testForm.addEventListener('submit', handleTestAlertSubmit);
 }
 
-// Quick Test Presets helper
-async function sendQuickTest(amount) {
-  const name = document.getElementById('testName').value.trim() || 'พี่เก่งสายเปย์';
-  const message = document.getElementById('testMessage').value.trim() || 'โดเนททดสอบจ้า!';
+// Save General settings config
+async function handleConfigSubmit(e) {
+  e.preventDefault();
+
+  const promptpayId = document.getElementById('promptpayId').value.trim();
+  const verifyMode = document.getElementById('verifyMode').value;
+  const easyslipApiKey = document.getElementById('easyslipApiKey').value.trim();
+  const streamerName = document.getElementById('streamerName').value.trim();
+  const streamerDescription = document.getElementById('streamerDescription').value.trim();
+
+  if (!promptpayId) {
+    alert('กรุณากรอก PromptPay ID');
+    return;
+  }
+
+  const btn = document.getElementById('btnSaveConfig');
+  btn.disabled = true;
+  btn.innerText = 'กำลังบันทึก...';
+
+  try {
+    // 1. Upload logo image first if selected
+    if (pendingLogoBase64) {
+      console.log('Uploading custom logo...');
+      const uploadRes = await fetch('/api/upload-logo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: pendingLogoBase64 })
+      });
+      const uploadResult = await uploadRes.json();
+      if (!uploadResult.success) throw new Error(uploadResult.error || 'Failed logo upload');
+      pendingLogoBase64 = null; // Reset
+    }
+
+    // 2. Save texts config
+    const response = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ promptpayId, verifyMode, easyslipApiKey, streamerName, streamerDescription })
+    });
+    
+    await response.json();
+    alert('บันทึกข้อมูลการตั้งค่าเรียบร้อยแล้ว');
+    fetchConfig(); // Reload
+  } catch (error) {
+    console.error('Error saving config:', error);
+    alert('เกิดข้อผิดพลาด: ' + error.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = 'บันทึกการตั้งค่า';
+  }
+}
+
+// Save Advanced Overlay Settings config
+async function handleAdvConfigSubmit(e) {
+  e.preventDefault();
+
+  const btn = document.getElementById('btnSaveAdvConfig');
+  btn.disabled = true;
+  btn.innerText = 'กำลังบันทึก...';
+
+  const requireApproval = document.getElementById('requireApproval').checked;
+  const minAmountTts = parseFloat(document.getElementById('minAmountTts').value) || 1;
+  const soundVolume = parseFloat(document.getElementById('soundVolume').value);
+  const ttsSpeed = parseFloat(document.getElementById('ttsSpeed').value);
+  const overlayAccentColor = document.getElementById('overlayAccentColor').value;
+  const overlayTextColor = document.getElementById('overlayTextColor').value;
+  const bannedWords = document.getElementById('bannedWords').value.trim();
+
+  try {
+    // 1. Upload custom sound file if selected
+    if (pendingSoundBase64) {
+      console.log('Uploading custom sound chime...');
+      const uploadSoundRes = await fetch('/api/upload-sound', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ soundBase64: pendingSoundBase64, filename: pendingSoundFilename })
+      });
+      const soundResult = await uploadSoundRes.json();
+      if (!soundResult.success) throw new Error(soundResult.error || 'Failed sound upload');
+      pendingSoundBase64 = null; // Reset
+    }
+
+    // 2. Save advanced params
+    const response = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        promptpayId: currentConfig.promptpayId, // keep existing PromptPay
+        requireApproval, minAmountTts, soundVolume, ttsSpeed, 
+        overlayAccentColor, overlayTextColor, bannedWords
+      })
+    });
+    
+    await response.json();
+    alert('บันทึกสไตล์การ์ดและการกรองระบบข้อความสำเร็จ!');
+    fetchConfig(); // Reload
+  } catch (error) {
+    console.error('Error saving advanced configurations:', error);
+    alert('เกิดข้อผิดพลาด: ' + error.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = 'บันทึกสไตล์ระบบคัดกรอง';
+  }
+}
+
+// Save Goal configurations
+async function handleGoalSubmit(e) {
+  e.preventDefault();
+
+  const goalEnabled = document.getElementById('goalEnabled').checked;
+  const goalTitle = document.getElementById('goalTitle').value.trim();
+  const goalTarget = parseFloat(document.getElementById('goalTarget').value) || 5000;
+  const goalCurrent = parseFloat(document.getElementById('goalCurrent').value) || 0;
+
+  const btn = document.getElementById('btnSaveGoal');
+  btn.disabled = true;
+  btn.innerText = 'กำลังบันทึก...';
+
+  try {
+    const response = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        promptpayId: currentConfig.promptpayId, // Keep original
+        goalEnabled, goalTitle, goalTarget, goalCurrent
+      })
+    });
+
+    await response.json();
+    alert('บันทึกรายละเอียดของเป้าหมายสนับสนุนเรียบร้อย!');
+    fetchConfig(); // Reload
+  } catch (error) {
+    console.error('Error saving goal config:', error);
+    alert('เกิดข้อผิดพลาดการเซฟเป้าหมาย');
+  } finally {
+    btn.disabled = false;
+    btn.innerText = 'บันทึกเป้าหมาย';
+  }
+}
+
+// Handle manual test alert submission
+async function handleTestAlertSubmit(e) {
+  e.preventDefault();
+
+  const name = document.getElementById('testName').value.trim();
+  const message = document.getElementById('testMessage').value.trim();
+  const amount = parseFloat(document.getElementById('testAmount').value);
+
   await triggerTestAlert(name, message, amount);
 }
 
-// REST call to trigger mock alerts
+// Quick presets test triggers helper
+window.sendQuickTest = async function(amount) {
+  const name = document.getElementById('testName').value.trim() || 'พี่เก่งสายเปย์';
+  const message = document.getElementById('testMessage').value.trim() || 'โอนสนับสนุนทดสอบจ้า!';
+  await triggerTestAlert(name, message, amount);
+};
+
+// REST call to trigger test alert
 async function triggerTestAlert(name, message, amount) {
   try {
     const response = await fetch('/api/test-alert', {
@@ -180,7 +412,30 @@ async function triggerTestAlert(name, message, amount) {
   }
 }
 
-// Render donations to HTML table
+// Render Top Donators to Dashboard Tab Table
+function renderTopDonatorsTable(topDonators) {
+  const tbody = document.getElementById('topDonatorsList');
+  if (!topDonators || topDonators.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="3" style="text-align: center; color: var(--text-muted); padding: 20px;">ไม่มีข้อมูลสถิติ</td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = topDonators.map((d, index) => {
+    return `
+      <tr>
+        <td><strong>#${index + 1}</strong></td>
+        <td>${escapeHtml(d.name)}</td>
+        <td style="text-align: right; color: #00ff87; font-weight: 700;">${d.amount.toFixed(2)} บาท</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// Render normal Table log History Tab
 function renderDonationsTable(donations) {
   const tbody = document.getElementById('logTableBody');
   
@@ -200,21 +455,26 @@ function renderDonationsTable(donations) {
 
   tbody.innerHTML = sorted.map(d => {
     const date = new Date(d.createdAt).toLocaleString('th-TH', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      day: '2-digit', month: '2-digit', year: 'numeric'
     });
 
-    const statusBadge = d.status === 'paid' 
-      ? `<span class="status-paid">✓ สำเร็จ (Paid)</span>` 
-      : `<span class="status-pending">⏱ รอชำระ (Pending)</span>`;
+    let badgeClass = 'status-pending';
+    let badgeText = 'รอชำระ (Pending)';
+    if (d.status === 'paid') {
+      badgeClass = 'status-paid';
+      badgeText = 'สำเร็จ (Paid)';
+    } else if (d.status === 'pending_approval') {
+      badgeClass = 'status-approval';
+      badgeText = 'รอคัดกรอง (Waiting)';
+    } else if (d.status === 'rejected') {
+      badgeClass = 'status-rejected';
+      badgeText = 'ปัดตก (Rejected)';
+    }
 
     const verifyType = d.slipQrData 
       ? 'ตรวจสลิป (EasySlip)' 
-      : (d.isTest ? 'โดเนททดสอบ' : 'โหมดจำลอง (Simulation)');
+      : (d.isTest ? 'โดเนททดสอบ' : (d.verificationMethod || 'โหมดจำลอง'));
 
     return `
       <tr>
@@ -222,12 +482,99 @@ function renderDonationsTable(donations) {
         <td><strong>${escapeHtml(d.name)}</strong></td>
         <td style="color: #d1cde3; font-style: italic;">"${escapeHtml(d.message || '')}"</td>
         <td style="color: #00ff87; font-weight: 700;">${d.amount.toFixed(2)} บาท</td>
-        <td>${statusBadge}</td>
+        <td><span class="${badgeClass}">${badgeText}</span></td>
         <td style="color: var(--text-muted); font-size: 13px;">${verifyType}</td>
       </tr>
     `;
   }).join('');
 }
+
+// Render Approvals queue list Tab
+function renderQueueTable(donations) {
+  const tbody = document.getElementById('queueTableBody');
+  const pendingApprovals = donations.filter(d => d.status === 'pending_approval');
+  
+  if (pendingApprovals.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 40px;">
+          ไม่มีรายการรอคัดกรองอนุมัติในคิวขณะนี้
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  // Sort oldest first (so they are approved in order of transfer)
+  const sorted = [...pendingApprovals].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+  tbody.innerHTML = sorted.map(d => {
+    const date = new Date(d.createdAt).toLocaleString('th-TH', {
+      hour: '2-digit', minute: '2-digit',
+      day: '2-digit', month: '2-digit'
+    });
+
+    const verifyType = d.slipQrData ? 'ตรวจสลิปธนาคาร' : (d.verificationMethod || 'โหมดจำลอง');
+
+    return `
+      <tr>
+        <td style="color: var(--text-muted); font-size: 13px;">${date}</td>
+        <td><strong>${escapeHtml(d.name)}</strong></td>
+        <td style="color: #d1cde3; font-style: italic;">"${escapeHtml(d.message || '')}"</td>
+        <td style="color: #00ff87; font-weight: 700;">${d.amount.toFixed(2)} บาท</td>
+        <td style="color: var(--text-muted); font-size: 13px;">${verifyType}</td>
+        <td>
+          <div class="action-buttons">
+            <button class="approve-btn" onclick="approveDonation('${d.id}')">อนุมัติออกจอ</button>
+            <button class="reject-btn" onclick="rejectDonation('${d.id}')">ปฏิเสธ</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// Action: Approve pending donation
+window.approveDonation = async function(id) {
+  try {
+    const response = await fetch('/api/donations/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ donationId: id })
+    });
+    const data = await response.json();
+    if (data.success) {
+      refreshAllData(); // Refresh Tables and stats
+    } else {
+      alert('การอนุมัติล้มเหลว: ' + data.error);
+    }
+  } catch (error) {
+    console.error('Approve error:', error);
+    alert('เชื่อมต่อระบบหลังบ้านขัดข้อง');
+  }
+};
+
+// Action: Reject pending donation
+window.rejectDonation = async function(id) {
+  if (!confirm('คุณแน่ใจหรือไม่ว่าต้องการคัดกรองข้อความและปัดรายการแจ้งเตือนนี้ทิ้ง?')) return;
+  
+  try {
+    const response = await fetch('/api/donations/reject', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ donationId: id })
+    });
+    const data = await response.json();
+    if (data.success) {
+      refreshAllData(); // Refresh Tables
+    } else {
+      alert('การปัดทิ้งล้มเหลว: ' + data.error);
+    }
+  } catch (error) {
+    console.error('Reject error:', error);
+    alert('เชื่อมต่อระบบหลังบ้านขัดข้อง');
+  }
+};
 
 // Utility to escape HTML and prevent XSS
 function escapeHtml(str) {

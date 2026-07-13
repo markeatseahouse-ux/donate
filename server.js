@@ -20,7 +20,7 @@ const CONFIG_PATH = path.join(__dirname, 'config.json');
 const DONATIONS_PATH = path.join(__dirname, 'donations.json');
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' })); // Increased limit to support base64 image uploads
+app.use(express.json({ limit: '10mb' })); // Increased limit to support base64 uploads (image/sound)
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Helper to load configurations (Supports Environment Variables for Cloud Deployment)
@@ -29,8 +29,22 @@ function loadConfig() {
     promptpayId: '0812345678', 
     verifyMode: 'simulate',    
     easyslipApiKey: '',
-    streamerName: 'SEAHOUSE STREAM', // Default streamer name
-    streamerDescription: 'ขอบคุณทุกแรงสนับสนุนสำหรับการพัฒนาช่องและคอมมูนิตี้ของเราครับ!' // Default greeting
+    streamerName: 'SEAHOUSE STREAM',
+    streamerDescription: 'ขอบคุณทุกแรงสนับสนุนสำหรับการพัฒนาช่องและคอมมูนิตี้ของเราครับ!',
+    bannedWords: 'ควย,สัส,เหี้ย,มึง,กู,เย็ด,อม,จู๋,หี,แตด,ชิบหาย,ฟาย,shyt,darn,fck', // Default word filters
+    requireApproval: false,
+    minAmountTts: 1,
+    ttsSpeed: 1.0,
+    ttsPitch: 1.0,
+    soundVolume: 0.8,
+    overlayAccentColor: '#ff007f', // Cyber pink default
+    overlayTextColor: '#ffffff',
+    alertAnimation: 'slide',
+    alertSoundFile: '', // Optional custom sound
+    goalEnabled: false,
+    goalTitle: 'สมทบทุนซื้ออุปกรณ์สตรีม',
+    goalTarget: 5000,
+    goalCurrent: 0
   };
 
   if (!fs.existsSync(CONFIG_PATH)) {
@@ -41,13 +55,27 @@ function loadConfig() {
     const data = fs.readFileSync(CONFIG_PATH, 'utf8');
     const diskConfig = JSON.parse(data);
     
-    // PRIORITIZE diskConfig (saved via admin panel) OVER process.env (Render setup default/fallback)
+    // PRIORITIZE diskConfig OVER process.env
     return {
       promptpayId: diskConfig.promptpayId || process.env.PROMPTPAY_ID || defaults.promptpayId,
       verifyMode: diskConfig.verifyMode || process.env.VERIFY_MODE || defaults.verifyMode,
       easyslipApiKey: diskConfig.easyslipApiKey || process.env.EASYSLIP_API_KEY || defaults.easyslipApiKey,
       streamerName: diskConfig.streamerName || process.env.STREAMER_NAME || defaults.streamerName,
-      streamerDescription: diskConfig.streamerDescription || process.env.STREAMER_DESC || defaults.streamerDescription
+      streamerDescription: diskConfig.streamerDescription || process.env.STREAMER_DESC || defaults.streamerDescription,
+      bannedWords: diskConfig.bannedWords !== undefined ? diskConfig.bannedWords : defaults.bannedWords,
+      requireApproval: diskConfig.requireApproval !== undefined ? diskConfig.requireApproval : defaults.requireApproval,
+      minAmountTts: diskConfig.minAmountTts !== undefined ? Number(diskConfig.minAmountTts) : defaults.minAmountTts,
+      ttsSpeed: diskConfig.ttsSpeed !== undefined ? Number(diskConfig.ttsSpeed) : defaults.ttsSpeed,
+      ttsPitch: diskConfig.ttsPitch !== undefined ? Number(diskConfig.ttsPitch) : defaults.ttsPitch,
+      soundVolume: diskConfig.soundVolume !== undefined ? Number(diskConfig.soundVolume) : defaults.soundVolume,
+      overlayAccentColor: diskConfig.overlayAccentColor || defaults.overlayAccentColor,
+      overlayTextColor: diskConfig.overlayTextColor || defaults.overlayTextColor,
+      alertAnimation: diskConfig.alertAnimation || defaults.alertAnimation,
+      alertSoundFile: diskConfig.alertSoundFile || defaults.alertSoundFile,
+      goalEnabled: diskConfig.goalEnabled !== undefined ? diskConfig.goalEnabled : defaults.goalEnabled,
+      goalTitle: diskConfig.goalTitle || defaults.goalTitle,
+      goalTarget: diskConfig.goalTarget !== undefined ? Number(diskConfig.goalTarget) : defaults.goalTarget,
+      goalCurrent: diskConfig.goalCurrent !== undefined ? Number(diskConfig.goalCurrent) : defaults.goalCurrent
     };
   } catch (err) {
     console.error('Error reading config.json, using defaults', err);
@@ -78,6 +106,22 @@ function loadDonations() {
 // Helper to save donations
 function saveDonations(donations) {
   fs.writeFileSync(DONATIONS_PATH, JSON.stringify(donations, null, 2));
+}
+
+// Profanity filter utility
+function filterProfanity(text, bannedWordsStr) {
+  if (!text) return '';
+  if (!bannedWordsStr) return text;
+  
+  const words = bannedWordsStr.split(',').map(w => w.trim()).filter(w => w.length > 0);
+  let filtered = text;
+  for (const word of words) {
+    // Escape regex characters
+    const escapedWord = word.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const regex = new RegExp(escapedWord, 'gi');
+    filtered = filtered.replace(regex, '*'.repeat(word.length));
+  }
+  return filtered;
 }
 
 // Bank Notification Regex Parser
@@ -114,10 +158,53 @@ function parseNotificationText(title, text) {
   return { amount, sender };
 }
 
+// Safe helper to complete/authorize payment logic
+function completePayment(donation, config) {
+  donation.status = config.requireApproval ? 'pending_approval' : 'paid';
+  donation.paidAt = new Date().toISOString();
+  
+  // Increment Goal progress if enabled
+  if (config.goalEnabled) {
+    config.goalCurrent = (config.goalCurrent || 0) + donation.amount;
+    saveConfig(config);
+    // Broadcast goal update instantly
+    io.emit('goal-update', {
+      title: config.goalTitle,
+      target: config.goalTarget,
+      current: config.goalCurrent,
+      enabled: config.goalEnabled
+    });
+  }
+
+  if (config.requireApproval) {
+    // Send to admin approvals queue
+    io.emit('admin-pending-approval', donation);
+  } else {
+    // Send directly to overlay screen
+    io.emit('donation-alert', {
+      id: donation.id,
+      name: donation.name,
+      senderRealName: donation.senderName || donation.name,
+      message: donation.message,
+      amount: donation.amount,
+      timestamp: donation.paidAt
+    });
+  }
+}
+
 // Socket Connection Handler
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
   
+  // Immediately send goal status to newly connected browser sources
+  const config = loadConfig();
+  socket.emit('goal-update', {
+    title: config.goalTitle,
+    target: config.goalTarget,
+    current: config.goalCurrent,
+    enabled: config.goalEnabled
+  });
+
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
   });
@@ -131,13 +218,53 @@ app.get('/api/config', (req, res) => {
 });
 
 app.post('/api/config', (req, res) => {
-  const { promptpayId, verifyMode, easyslipApiKey, streamerName, streamerDescription } = req.body;
+  const config = loadConfig();
+  
+  // Object assign values from body
+  const { 
+    promptpayId, verifyMode, easyslipApiKey, streamerName, streamerDescription,
+    bannedWords, requireApproval, minAmountTts, ttsSpeed, ttsPitch, soundVolume,
+    overlayAccentColor, overlayTextColor, alertAnimation, alertSoundFile,
+    goalEnabled, goalTitle, goalTarget, goalCurrent
+  } = req.body;
+
   if (!promptpayId) {
     return res.status(400).json({ error: 'PromptPay ID is required' });
   }
-  const config = { promptpayId, verifyMode, easyslipApiKey, streamerName, streamerDescription };
-  saveConfig(config);
-  res.json({ message: 'Configuration saved successfully', config });
+
+  const updatedConfig = {
+    promptpayId,
+    verifyMode,
+    easyslipApiKey,
+    streamerName,
+    streamerDescription,
+    bannedWords: bannedWords !== undefined ? bannedWords : config.bannedWords,
+    requireApproval: requireApproval !== undefined ? !!requireApproval : config.requireApproval,
+    minAmountTts: minAmountTts !== undefined ? Number(minAmountTts) : config.minAmountTts,
+    ttsSpeed: ttsSpeed !== undefined ? Number(ttsSpeed) : config.ttsSpeed,
+    ttsPitch: ttsPitch !== undefined ? Number(ttsPitch) : config.ttsPitch,
+    soundVolume: soundVolume !== undefined ? Number(soundVolume) : config.soundVolume,
+    overlayAccentColor: overlayAccentColor || config.overlayAccentColor,
+    overlayTextColor: overlayTextColor || config.overlayTextColor,
+    alertAnimation: alertAnimation || config.alertAnimation,
+    alertSoundFile: alertSoundFile !== undefined ? alertSoundFile : config.alertSoundFile,
+    goalEnabled: goalEnabled !== undefined ? !!goalEnabled : config.goalEnabled,
+    goalTitle: goalTitle || config.goalTitle,
+    goalTarget: goalTarget !== undefined ? Number(goalTarget) : config.goalTarget,
+    goalCurrent: goalCurrent !== undefined ? Number(goalCurrent) : config.goalCurrent
+  };
+
+  saveConfig(updatedConfig);
+  
+  // Broadcast update to goal widgets immediately in case goal configuration changed
+  io.emit('goal-update', {
+    title: updatedConfig.goalTitle,
+    target: updatedConfig.goalTarget,
+    current: updatedConfig.goalCurrent,
+    enabled: updatedConfig.goalEnabled
+  });
+
+  res.json({ message: 'Configuration saved successfully', config: updatedConfig });
 });
 
 // Logo Upload Endpoint
@@ -151,7 +278,6 @@ app.post('/api/upload-logo', (req, res) => {
     const buffer = Buffer.from(imageBase64, 'base64');
     const targetPath = path.join(__dirname, 'public', 'streamer_logo.jpg');
     
-    // Save image locally (this will overwrite public/streamer_logo.jpg)
     fs.writeFileSync(targetPath, buffer);
     res.json({ success: true, message: 'Streamer logo updated successfully' });
   } catch (error) {
@@ -160,12 +286,48 @@ app.post('/api/upload-logo', (req, res) => {
   }
 });
 
+// Custom sound file upload endpoint
+app.post('/api/upload-sound', (req, res) => {
+  const { soundBase64, filename } = req.body;
+  if (!soundBase64) {
+    return res.status(400).json({ error: 'No sound data provided' });
+  }
+  
+  try {
+    const ext = path.extname(filename || 'alert.mp3').toLowerCase();
+    const buffer = Buffer.from(soundBase64, 'base64');
+    const targetFilename = `alert_chime${ext}`;
+    const targetPath = path.join(__dirname, 'public', targetFilename);
+    
+    // Clean old files
+    const possibleFiles = ['alert_chime.mp3', 'alert_chime.wav', 'alert_chime.ogg'];
+    for (const f of possibleFiles) {
+      const p = path.join(__dirname, 'public', f);
+      if (fs.existsSync(p)) {
+        try { fs.unlinkSync(p); } catch(err){}
+      }
+    }
+    
+    fs.writeFileSync(targetPath, buffer);
+    
+    // Write into config
+    const config = loadConfig();
+    config.alertSoundFile = targetFilename;
+    saveConfig(config);
+    
+    res.json({ success: true, message: 'Sound chime uploaded successfully', filename: targetFilename });
+  } catch (error) {
+    console.error('Sound upload error:', error);
+    res.status(500).json({ error: 'Failed to save sound file' });
+  }
+});
+
 // Donations list API
 app.get('/api/donations', (req, res) => {
   res.json(loadDonations());
 });
 
-// Register a Donation
+// Register a Donation (Applies profanity filtering)
 app.post('/api/donate', (req, res) => {
   const { name, message, amount } = req.body;
   
@@ -174,14 +336,18 @@ app.post('/api/donate', (req, res) => {
   }
   
   const config = loadConfig();
-  const donationId = 'don_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   
+  // Filter profanity on name and message
+  const filteredName = filterProfanity(name.trim(), config.bannedWords);
+  const filteredMessage = filterProfanity((message || '').trim(), config.bannedWords);
+  
+  const donationId = 'don_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   const qrPayload = generatePayload(config.promptpayId, { amount: parseFloat(amount) });
   
   const donation = {
     id: donationId,
-    name: name.trim(),
-    message: (message || '').trim(),
+    name: filteredName,
+    message: filteredMessage,
     amount: parseFloat(amount),
     status: 'pending',
     qrPayload,
@@ -211,21 +377,13 @@ app.post('/api/simulate-success', (req, res) => {
   }
   
   const donation = donations[donationIndex];
-  if (donation.status === 'paid') {
-    return res.status(400).json({ error: 'Donation already paid' });
+  if (donation.status === 'paid' || donation.status === 'pending_approval') {
+    return res.status(400).json({ error: 'Donation already processed' });
   }
   
-  donation.status = 'paid';
-  donation.paidAt = new Date().toISOString();
+  const config = loadConfig();
+  completePayment(donation, config);
   saveDonations(donations);
-  
-  io.emit('donation-alert', {
-    id: donation.id,
-    name: donation.name,
-    message: donation.message,
-    amount: donation.amount,
-    timestamp: donation.paidAt
-  });
   
   res.json({ success: true, donation });
 });
@@ -245,52 +403,32 @@ app.post('/api/verify', async (req, res) => {
   }
   
   const donation = donations[donationIndex];
-  if (donation.status === 'paid') {
-    return res.json({ success: true, message: 'Already paid', donation });
+  if (donation.status === 'paid' || donation.status === 'pending_approval') {
+    return res.json({ success: true, message: 'Already processed', donation });
   }
   
   const config = loadConfig();
   
   // Guard check for Simulation Mode vs EasySlip Mode
   if (config.verifyMode === 'simulate') {
-    donation.status = 'paid';
-    donation.paidAt = new Date().toISOString();
+    completePayment(donation, config);
     saveDonations(donations);
-    
-    io.emit('donation-alert', {
-      id: donation.id,
-      name: donation.name,
-      message: donation.message,
-      amount: donation.amount,
-      timestamp: donation.paidAt
-    });
-    
     return res.json({ success: true, message: 'Simulated payment verified', donation });
   }
   
-  const duplicate = donations.find(d => d.slipQrData === qrData && d.status === 'paid');
+  const duplicate = donations.find(d => d.slipQrData === qrData && (d.status === 'paid' || d.status === 'pending_approval'));
   if (duplicate) {
     return res.status(400).json({ error: 'สลิปนี้ถูกใช้ไปแล้ว (Duplicate Slip QR Code)' });
   }
   
   if (!config.easyslipApiKey) {
     if (qrData.startsWith('0046')) {
-      donation.status = 'paid';
-      donation.paidAt = new Date().toISOString();
       donation.slipQrData = qrData;
       donation.transRef = 'MOCK_REF_' + Date.now();
       donation.senderName = 'ผู้โอนตัวจริง (สแกนทดสอบ)';
       
+      completePayment(donation, config);
       saveDonations(donations);
-      
-      io.emit('donation-alert', {
-        id: donation.id,
-        name: donation.name,
-        senderRealName: donation.senderName,
-        message: donation.message,
-        amount: donation.amount,
-        timestamp: donation.paidAt
-      });
       
       return res.json({ 
         success: true, 
@@ -328,23 +466,14 @@ app.post('/api/verify', async (req, res) => {
       }
       
       const rawSenderName = slipData.rawSlip?.sender?.displayName || slipData.rawSlip?.sender?.nameTh || donation.name;
+      const filteredSenderName = filterProfanity(rawSenderName, config.bannedWords);
       
-      donation.status = 'paid';
-      donation.paidAt = new Date().toISOString();
       donation.slipQrData = qrData;
       donation.transRef = slipData.transRef;
-      donation.senderName = rawSenderName;
+      donation.senderName = filteredSenderName;
       
+      completePayment(donation, config);
       saveDonations(donations);
-      
-      io.emit('donation-alert', {
-        id: donation.id,
-        name: donation.name,
-        senderRealName: donation.senderName,
-        message: donation.message,
-        amount: donation.amount,
-        timestamp: donation.paidAt
-      });
       
       res.json({ success: true, donation });
     } else {
@@ -375,8 +504,9 @@ app.all('/api/webhook/notification', (req, res) => {
     return res.status(200).json({ status: 'ignored', message: 'No valid transfer amount found in notification text' });
   }
   
+  const config = loadConfig();
+  const filteredSender = filterProfanity(parsed.sender, config.bannedWords);
   const donations = loadDonations();
-  
   const now = new Date();
   const timeLimitMs = 20 * 60 * 1000;
   
@@ -389,21 +519,11 @@ app.all('/api/webhook/notification', (req, res) => {
   
   if (matchIndex !== -1) {
     const donation = donations[matchIndex];
-    donation.status = 'paid';
-    donation.paidAt = now.toISOString();
-    donation.senderName = parsed.sender;
+    donation.senderName = filteredSender;
     donation.verificationMethod = 'Notification Forwarder';
     
+    completePayment(donation, config);
     saveDonations(donations);
-    
-    io.emit('donation-alert', {
-      id: donation.id,
-      name: donation.name,
-      senderRealName: parsed.sender,
-      message: donation.message,
-      amount: donation.amount,
-      timestamp: donation.paidAt
-    });
     
     console.log(`[Notification Webhook] Matched pending donation ID ${donation.id} for ${donation.amount} THB`);
     return res.json({ status: 'success', matched: true, donation });
@@ -411,31 +531,113 @@ app.all('/api/webhook/notification', (req, res) => {
     const donationId = 'don_direct_' + Date.now();
     const newDonation = {
       id: donationId,
-      name: `คุณ ${parsed.sender} (โอนตรง)`,
-      message: 'สนับสนุนสตรีมเมอร์ผ่านบัญชีธนาคารโดยตรง',
+      name: `คุณ ${filteredSender} (โอนตรง)`,
+      message: filterProfanity('สนับสนุนสตรีมเมอร์ผ่านบัญชีธนาคารโดยตรง', config.bannedWords),
       amount: parsed.amount,
-      status: 'paid',
-      paidAt: now.toISOString(),
       createdAt: now.toISOString(),
-      senderName: parsed.sender,
+      senderName: filteredSender,
       verificationMethod: 'Notification Forwarder (Direct)'
     };
     
+    completePayment(newDonation, config);
     donations.push(newDonation);
     saveDonations(donations);
-    
-    io.emit('donation-alert', {
-      id: newDonation.id,
-      name: newDonation.name,
-      senderRealName: parsed.sender,
-      message: newDonation.message,
-      amount: newDonation.amount,
-      timestamp: newDonation.paidAt
-    });
     
     console.log(`[Notification Webhook] Created direct donation for ${newDonation.amount} THB`);
     return res.json({ status: 'success', matched: false, donation: newDonation });
   }
+});
+
+// Approve Pending Donation
+app.post('/api/donations/approve', (req, res) => {
+  const { donationId } = req.body;
+  if (!donationId) return res.status(400).json({ error: 'Donation ID is required' });
+  
+  const donations = loadDonations();
+  const donationIndex = donations.findIndex(d => d.id === donationId);
+  if (donationIndex === -1) {
+    return res.status(404).json({ error: 'Donation not found' });
+  }
+  
+  const donation = donations[donationIndex];
+  if (donation.status !== 'pending_approval') {
+    return res.status(400).json({ error: 'Donation is not in pending approval state' });
+  }
+  
+  donation.status = 'paid';
+  donation.approvedAt = new Date().toISOString();
+  saveDonations(donations);
+  
+  // Trigger overlay alert display
+  io.emit('donation-alert', {
+    id: donation.id,
+    name: donation.name,
+    senderRealName: donation.senderName || donation.name,
+    message: donation.message,
+    amount: donation.amount,
+    timestamp: donation.paidAt
+  });
+  
+  res.json({ success: true, donation });
+});
+
+// Reject Pending Donation
+app.post('/api/donations/reject', (req, res) => {
+  const { donationId } = req.body;
+  if (!donationId) return res.status(400).json({ error: 'Donation ID is required' });
+  
+  const donations = loadDonations();
+  const donationIndex = donations.findIndex(d => d.id === donationId);
+  if (donationIndex === -1) {
+    return res.status(404).json({ error: 'Donation not found' });
+  }
+  
+  const donation = donations[donationIndex];
+  if (donation.status !== 'pending_approval') {
+    return res.status(400).json({ error: 'Donation is not in pending approval state' });
+  }
+  
+  donation.status = 'rejected';
+  donation.rejectedAt = new Date().toISOString();
+  saveDonations(donations);
+  
+  res.json({ success: true, donation });
+});
+
+// Get Statistics for Dashboard Summary Tab
+app.get('/api/stats', (req, res) => {
+  const donations = loadDonations();
+  const paidAndApproval = donations.filter(d => d.status === 'paid' || d.status === 'pending_approval');
+  
+  const totalAmount = paidAndApproval.reduce((sum, d) => sum + d.amount, 0);
+  
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  
+  const todayAmount = paidAndApproval
+    .filter(d => new Date(d.paidAt || d.createdAt) >= startOfToday)
+    .reduce((sum, d) => sum + d.amount, 0);
+
+  // Aggregate Top Donators list
+  const donorMap = {};
+  paidAndApproval.forEach(d => {
+    const key = d.name.trim();
+    donorMap[key] = (donorMap[key] || 0) + d.amount;
+  });
+  
+  const topDonators = Object.keys(donorMap)
+    .map(name => ({ name, amount: donorMap[name] }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 10);
+
+  res.json({
+    totalAmount,
+    todayAmount,
+    topDonators,
+    pendingCount: donations.filter(d => d.status === 'pending').length,
+    approvalCount: donations.filter(d => d.status === 'pending_approval').length,
+    successCount: donations.filter(d => d.status === 'paid').length
+  });
 });
 
 // --- API Proxy for Google Translate TTS (Bypasses Referrer Blocks) ---
@@ -466,18 +668,23 @@ app.get('/api/tts', async (req, res) => {
   }
 });
 
-// Trigger a Test Alert from Dashboard
+// Trigger a Test Alert from Dashboard (bypasses approval queue for testing ease)
 app.post('/api/test-alert', (req, res) => {
   const { name, message, amount } = req.body;
+  const config = loadConfig();
+  const filteredName = filterProfanity(name || 'ผู้สนับสนุนปริศนา', config.bannedWords);
+  const filteredMessage = filterProfanity(message || 'ขอให้สตรีมเมอร์มีความสุขมากๆ ครับ!', config.bannedWords);
+
   const testAlert = {
     id: 'test_' + Date.now(),
-    name: name || 'ผู้สนับสนุนปริศนา',
-    message: message || 'ขอให้สตรีมเมอร์มีความสุขมากๆ ครับ!',
+    name: filteredName,
+    message: filteredMessage,
     amount: parseFloat(amount) || 99,
     timestamp: new Date().toISOString(),
     isTest: true
   };
   
+  // Directly broadcast to overlay (bypassing requireApproval queue so testing works instantly)
   io.emit('donation-alert', testAlert);
   res.json({ success: true, alert: testAlert });
 });
