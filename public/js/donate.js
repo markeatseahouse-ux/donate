@@ -58,6 +58,17 @@ async function fetchConfig() {
       document.documentElement.style.setProperty('--accent-color', config.viewerAccentColor);
       document.documentElement.style.setProperty('--primary-gradient', `linear-gradient(135deg, ${config.viewerAccentColor} 0%, #ff007f 100%)`);
     }
+
+    // Set minimum donation constraints
+    const minVal = config.minDonateAmount !== undefined ? config.minDonateAmount : 1;
+    const amountInput = document.getElementById('donateAmount');
+    if (amountInput) {
+      amountInput.min = minVal;
+    }
+    const minText = document.getElementById('minDonateText');
+    if (minText) {
+      minText.innerText = `โอนสนับสนุนขั้นต่ำ ${minVal} บาท`;
+    }
   } catch (error) {
     console.error('Error fetching config:', error);
   }
@@ -138,8 +149,10 @@ async function handleFormSubmit(e) {
   const message = document.getElementById('donorMessage').value.trim();
   const amount = parseFloat(document.getElementById('donateAmount').value);
 
-  if (!name || isNaN(amount) || amount <= 0) {
-    alert('กรุณากรอกข้อมูลให้ครบถ้วน และถูกต้อง');
+  const minAmount = config.minDonateAmount !== undefined ? config.minDonateAmount : 1;
+
+  if (!name || isNaN(amount) || amount < minAmount) {
+    alert(`กรุณากรอกข้อมูลให้ถูกต้อง ยอดโอนสนับสนุนขั้นต่ำคือ ${minAmount} บาท`);
     return;
   }
 

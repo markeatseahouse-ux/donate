@@ -110,6 +110,7 @@ async function fetchConfig() {
 
     // Populate Settings form
     document.getElementById('promptpayId').value = currentConfig.promptpayId || '';
+    document.getElementById('minDonateAmount').value = currentConfig.minDonateAmount || 1;
     document.getElementById('verifyMode').value = currentConfig.verifyMode || 'simulate';
     document.getElementById('easyslipApiKey').value = currentConfig.easyslipApiKey || '';
     document.getElementById('streamerName').value = currentConfig.streamerName || '';
@@ -276,6 +277,7 @@ async function handleConfigSubmit(e) {
   e.preventDefault();
 
   const promptpayId = document.getElementById('promptpayId').value.trim();
+  const minDonateAmount = parseFloat(document.getElementById('minDonateAmount').value) || 1;
   const verifyMode = document.getElementById('verifyMode').value;
   const easyslipApiKey = document.getElementById('easyslipApiKey').value.trim();
   const streamerName = document.getElementById('streamerName').value.trim();
@@ -322,7 +324,7 @@ async function handleConfigSubmit(e) {
     const response = await fetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ promptpayId, verifyMode, easyslipApiKey, streamerName, streamerDescription, viewerAccentColor })
+      body: JSON.stringify({ promptpayId, minDonateAmount, verifyMode, easyslipApiKey, streamerName, streamerDescription, viewerAccentColor })
     });
     
     await response.json();

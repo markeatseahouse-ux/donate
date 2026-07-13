@@ -231,17 +231,15 @@
           </div>
           
           <div class="form-group">
-            <label for="donateAmount">จำนวนเงิน (Amount - THB)</label>
-            <input type="number" id="donateAmount" placeholder="ยอดเงินสนับสนุน" min="1" step="any" required>
-            
-            <!-- Quick presets chips -->
-            <div class="amount-presets">
-              <div class="preset-chip" onclick="setPresetAmount(20)">20</div>
-              <div class="preset-chip" onclick="setPresetAmount(50)">50</div>
-              <div class="preset-chip" onclick="setPresetAmount(100)">100</div>
-              <div class="preset-chip" onclick="setPresetAmount(500)">500</div>
-              <div class="preset-chip" onclick="setPresetAmount(1000)">1000</div>
+            <label for="donateAmount">จำนวนเงินที่สนับสนุน (THB)</label>
+            <div class="quick-amounts">
+              <button type="button" class="preset-chip" onclick="setAmount(20)">20 ฿</button>
+              <button type="button" class="preset-chip" onclick="setAmount(50)">50 ฿</button>
+              <button type="button" class="preset-chip" onclick="setAmount(100)">100 ฿</button>
+              <button type="button" class="preset-chip" onclick="setAmount(500)">500 ฿</button>
             </div>
+            <input type="number" id="donateAmount" placeholder="ยอดเงินสนับสนุน" min="1" step="any" required>
+            <small style="color: var(--text-muted); font-size: 12.5px; display:block; margin-top:4px;" id="minDonateText">โอนสนับสนุนขั้นต่ำ 1 บาท</small>
           </div>
           
           <button type="submit" id="btnSubmit">

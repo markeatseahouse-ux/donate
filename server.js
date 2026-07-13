@@ -34,6 +34,7 @@ function loadConfig() {
     bannedWords: 'ควย,สัส,เหี้ย,มึง,เย็ด,จู๋,หี,แตด,ชิบหาย,ฟาย,shyt,darn,fck', // Default word filters
     requireApproval: false,
     minAmountTts: 1,
+    minDonateAmount: 1, // General minimum donation amount (default 1 Baht)
     ttsSpeed: 1.0,
     ttsPitch: 1.0,
     soundVolume: 0.8,
@@ -67,6 +68,7 @@ function loadConfig() {
       bannedWords: diskConfig.bannedWords !== undefined ? diskConfig.bannedWords : defaults.bannedWords,
       requireApproval: diskConfig.requireApproval !== undefined ? diskConfig.requireApproval : defaults.requireApproval,
       minAmountTts: diskConfig.minAmountTts !== undefined ? Number(diskConfig.minAmountTts) : defaults.minAmountTts,
+      minDonateAmount: diskConfig.minDonateAmount !== undefined ? Number(diskConfig.minDonateAmount) : defaults.minDonateAmount,
       ttsSpeed: diskConfig.ttsSpeed !== undefined ? Number(diskConfig.ttsSpeed) : defaults.ttsSpeed,
       ttsPitch: diskConfig.ttsPitch !== undefined ? Number(diskConfig.ttsPitch) : defaults.ttsPitch,
       soundVolume: diskConfig.soundVolume !== undefined ? Number(diskConfig.soundVolume) : defaults.soundVolume,
@@ -264,7 +266,7 @@ app.post('/api/config', (req, res) => {
   // Object assign values from body
   const { 
     promptpayId, verifyMode, easyslipApiKey, streamerName, streamerDescription,
-    bannedWords, requireApproval, minAmountTts, ttsSpeed, ttsPitch, soundVolume,
+    bannedWords, requireApproval, minAmountTts, minDonateAmount, ttsSpeed, ttsPitch, soundVolume,
     overlayAccentColor, overlayTextColor, alertAnimation, alertSoundFile,
     goalEnabled, goalTitle, goalTarget, goalCurrent,
     viewerAccentColor, viewerBannerFile
@@ -283,6 +285,7 @@ app.post('/api/config', (req, res) => {
     bannedWords: bannedWords !== undefined ? bannedWords : config.bannedWords,
     requireApproval: requireApproval !== undefined ? !!requireApproval : config.requireApproval,
     minAmountTts: minAmountTts !== undefined ? Number(minAmountTts) : config.minAmountTts,
+    minDonateAmount: minDonateAmount !== undefined ? Number(minDonateAmount) : config.minDonateAmount,
     ttsSpeed: ttsSpeed !== undefined ? Number(ttsSpeed) : config.ttsSpeed,
     ttsPitch: ttsPitch !== undefined ? Number(ttsPitch) : config.ttsPitch,
     soundVolume: soundVolume !== undefined ? Number(soundVolume) : config.soundVolume,
@@ -404,6 +407,12 @@ app.post('/api/donate', (req, res) => {
   }
   
   const config = loadConfig();
+  
+  // Enforce general minimum donation amount validation
+  const minAmount = Number(config.minDonateAmount) || 1;
+  if (parseFloat(amount) < minAmount) {
+    return res.status(400).json({ error: `จำนวนเงินสนับสนุนต่ำกว่าเกณฑ์ขั้นต่ำ (${minAmount} บาท)` });
+  }
   
   // Filter profanity on name and message
   const filteredName = filterProfanity(name.trim(), config.bannedWords);
@@ -759,11 +768,11 @@ app.post('/api/test-alert', (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`=============================================`);
+  console.log('=============================================');
   console.log(`Donate Overlay System is running!`);
   console.log(`- Web Server: http://localhost:${PORT}`);
   console.log(`- Viewer Page: http://localhost:${PORT}/index.html`);
   console.log(`- OBS Overlay: http://localhost:${PORT}/overlay.html`);
   console.log(`- Admin Panel: http://localhost:${PORT}/admin.html`);
-  console.log(`=============================================`);
+  console.log('=============================================');
 });
