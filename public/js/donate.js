@@ -116,7 +116,7 @@ function setPresetAmount(amount) {
 // Counter helper
 function updateCharCounter(el) {
   const counter = document.getElementById('charCounter');
-  counter.innerText = `${el.value.length} / 150`;
+  counter.innerText = `${el.value.length} / 200`;
 }
 
 // Step 1 Form Submission -> Generates PromptPay QR
@@ -394,7 +394,7 @@ function resetForm() {
   chips.forEach(chip => chip.classList.remove('active'));
   
   // Clear char counter text
-  document.getElementById('charCounter').innerText = '0 / 150';
+  document.getElementById('charCounter').innerText = '0 / 200';
   
   currentDonationId = null;
   currentAmount = 0;
