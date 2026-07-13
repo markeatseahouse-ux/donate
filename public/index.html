@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Donate to Streamer - ระบบสนับสนุนสตรีมเมอร์</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .donate-container {
+      width: 100%;
+      max-width: 520px;
+      text-align: center;
+    }
+    
+    .logo-container {
+      margin-bottom: 24px;
+    }
+    
+    .logo-container svg {
+      width: 64px;
+      height: 64px;
+      filter: drop-shadow(0 0 12px rgba(138, 43, 226, 0.6));
+    }
+    
+    .step-container {
+      display: none;
+    }
+    
+    .step-container.active {
+      display: block;
+      animation: fadeIn 0.4s ease-out forwards;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* QR code section */
+    .qr-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 16px;
+      padding: 24px;
+      margin: 20px 0;
+      display: inline-block;
+      width: 100%;
+    }
+    
+    #qrcode {
+      display: inline-block;
+      padding: 12px;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      margin-bottom: 16px;
+    }
+    
+    #qrcode img {
+      display: block;
+      margin: 0 auto;
+    }
+    
+    .promptpay-header {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    
+    .promptpay-header img {
+      height: 32px;
+      border-radius: 4px;
+    }
+    
+    .amount-display {
+      font-size: 32px;
+      font-weight: 700;
+      color: #00ff87;
+      margin-bottom: 4px;
+    }
+    
+    .amount-display span {
+      font-size: 18px;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+    
+    /* Slip upload area */
+    .upload-box {
+      border: 2px dashed rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      padding: 24px;
+      background: rgba(255, 255, 255, 0.02);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-top: 16px;
+      position: relative;
+    }
+    
+    .upload-box:hover, .upload-box.dragover {
+      border-color: #8a2be2;
+      background: rgba(138, 43, 226, 0.05);
+    }
+    
+    .upload-box svg {
+      width: 48px;
+      height: 48px;
+      fill: var(--text-muted);
+      margin-bottom: 12px;
+      transition: all 0.2s ease;
+    }
+    
+    .upload-box:hover svg {
+      fill: #ff007f;
+      transform: translateY(-2px);
+    }
+    
+    .upload-box input {
+      display: none;
+    }
+    
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      margin-top: 12px;
+    }
+    
+    .status-badge.pending {
+      color: #ffaa00;
+      background: rgba(255, 170, 0, 0.1);
+      border-color: rgba(255, 170, 0, 0.2);
+    }
+    
+    .status-badge.loading {
+      color: #4facfe;
+      background: rgba(79, 172, 254, 0.1);
+      border-color: rgba(79, 172, 254, 0.2);
+    }
+    
+    /* Success screen animation */
+    .success-icon {
+      width: 80px;
+      height: 80px;
+      background: var(--success-gradient);
+      border-radius: 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 0 auto 24px auto;
+      box-shadow: 0 0 20px rgba(0, 255, 135, 0.4);
+      animation: scaleUp 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+    
+    @keyframes scaleUp {
+      from { transform: scale(0); }
+      to { transform: scale(1); }
+    }
+    
+    .success-amount {
+      font-size: 40px;
+      font-weight: 700;
+      color: #00ff87;
+      margin: 16px 0;
+    }
+  </style>
+  <!-- CDN Scripts for QR Code and QR Scanner -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+
+  <div class="donate-container">
+    <div class="glass-panel">
+      
+      <!-- LOGO -->
+      <div class="logo-container">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 21L10.55 19.705C5.4 15.03 2 11.95 2 8.2C2 5.12 4.12 3 7 3C8.62 3 10.17 3.76 11 4.95C11.83 3.76 13.38 3 15 3C17.88 3 20 5.12 20 8.2C20 11.95 16.6 15.03 11.45 19.71L12 21Z" fill="url(#logoGrad)"/>
+          <defs>
+            <linearGradient id="logoGrad" x1="2" y1="3" x2="20" y2="21" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#8a2be2" />
+              <stop offset="1" stop-color="#ff007f" />
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+
+      <!-- STEP 1: Form Fill -->
+      <div id="step-form" class="step-container active">
+        <h1 class="gradient-text">สนับสนุนสตรีมเมอร์</h1>
+        <p style="color: var(--text-muted); margin-bottom: 24px;">กรอกชื่อและข้อความของคุณเพื่อส่งขึ้นหน้าจอพร้อมระบบอ่านออกเสียง</p>
+        
+        <form id="donateForm">
+          <div class="form-group">
+            <label for="donorName">ชื่อผู้โดเนท (Name)</label>
+            <input type="text" id="donorName" placeholder="ระบุชื่อของคุณ (แสดงบนสตรีม)" required maxlength="30">
+          </div>
+          
+          <div class="form-group">
+            <label for="donorMessage">ข้อความส่งถึงสตรีมเมอร์ (Message)</label>
+            <textarea id="donorMessage" placeholder="เขียนข้อความให้กำลังใจ (รองรับไทย/Eng)" rows="3" maxlength="150"></textarea>
+          </div>
+          
+          <div class="form-group">
+            <label for="donateAmount">จำนวนเงิน (Amount - THB)</label>
+            <input type="number" id="donateAmount" placeholder="ขั้นต่ำ 1 บาท" min="1" step="any" required>
+          </div>
+          
+          <button type="submit" id="btnSubmit">
+            <span>ดำเนินการต่อ</span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+          </button>
+        </form>
+      </div>
+
+      <!-- STEP 2: QR & Payment Verification -->
+      <div id="step-payment" class="step-container">
+        <h1>สแกนจ่ายเงิน (PromptPay)</h1>
+        <p style="color: var(--text-muted); margin-bottom: 12px;">กรุณาสแกนคิวอาร์โค้ดนี้เพื่อทำการโอนเงิน</p>
+        
+        <div class="qr-card">
+          <div class="promptpay-header">
+            <img src="https://images.squarespace-cdn.com/content/v1/593796ec725e25287f6311aa/1547781329618-U1Q1NEXD838UCRUPED8W/PromptPay-logo.jpg?format=100w" alt="PromptPay">
+            <span style="font-weight: 700; color: #4facfe;">PROMPT PAY</span>
+          </div>
+          
+          <div class="amount-display" id="displayAmount">0.00 <span>THB</span></div>
+          
+          <div id="qrcode"></div>
+          
+          <!-- Verification Mode Displays -->
+          <div id="simulate-section" style="display: none;">
+            <button id="btnSimulatePay">ยืนยันการชำระเงิน (จำลอง)</button>
+          </div>
+
+          <div id="slip-section" style="display: none;">
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">เมื่อโอนเสร็จแล้ว กรุณาอัปโหลดรูปภาพสลิปด้านล่างเพื่อตรวจสอบยอดทันที</p>
+            <div class="upload-box" id="uploadBox">
+              <svg viewBox="0 0 24 24">
+                <path d="M19 13H13V19H11V13H5V11H11V5H13V11H19V13Z"/>
+              </svg>
+              <p id="uploadText" style="font-weight: 600;">คลิก หรือ ลากสลิปธนาคารมาวางที่นี่</p>
+              <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">รองรับ JPG, PNG (ตรวจหา QR อัตโนมัติ)</p>
+              <input type="file" id="slipInput" accept="image/*">
+            </div>
+          </div>
+          
+          <div class="status-badge pending" id="statusBadge">
+            <span class="spinner" id="statusSpinner" style="display:none;"></span>
+            <span id="statusText">รอการชำระเงิน...</span>
+          </div>
+        </div>
+
+        <button type="button" class="mt-4" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); box-shadow: none;" onclick="goBackToForm()">
+          ย้อนกลับ
+        </button>
+      </div>
+
+      <!-- STEP 3: Success Screen -->
+      <div id="step-success" class="step-container">
+        <div class="success-icon">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#0b071a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+        </div>
+        <h1 class="gradient-text">โอนเงินสำเร็จ!</h1>
+        <p style="color: var(--text-muted);">ขอบคุณสำหรับทุกแรงสนับสนุน</p>
+        <p style="color: var(--text-muted); margin-top: 8px;">ข้อความของคุณได้รับการส่งไปยังหน้าจอของสตรีมเมอร์แล้ว</p>
+        
+        <div class="success-amount" id="successAmount">0.00 THB</div>
+        
+        <div style="background: rgba(255,255,255,0.03); border-radius: 12px; padding: 16px; margin-bottom: 24px;">
+          <strong id="successName" style="color: #ff007f;">ชื่อผู้ส่ง</strong>
+          <p id="successMessage" style="font-size: 15px; margin-top: 8px; font-style: italic; color: #d1cde3;">"ข้อความ"</p>
+        </div>
+
+        <button onclick="resetForm()">โอนเงินสนับสนุนอีกครั้ง</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Offscreen canvas for QR Scanning -->
+  <canvas id="scanCanvas" style="display:none;"></canvas>
+
+  <script src="/js/donate.js"></script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Donate Overlay - Stream Overlay Screen</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/overlay.css">
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body class="overlay-body">
+
+  <!-- Interactive overlay activator to bypass browser audio autoplay restrictions -->
+  <div id="audio-activator" class="audio-banner">
+    <button onclick="unlockAudio()">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+      </svg>
+      คลิกเพื่อเปิดระบบเสียง (Click to Enable Audio for OBS)
+    </button>
+  </div>
+
+  <!-- Main Alert Overlay Container -->
+  <div class="overlay-wrapper">
+    <div id="donation-card" class="donation-card-hidden">
+      <!-- Glow background borders -->
+      <div class="card-glow"></div>
+      
+      <div class="card-header">
+        <div class="badge-icon">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="url(#alertGrad)"/>
+            <path d="M2 17L12 22L22 17M2 12L12 17L22 12" stroke="url(#alertGrad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <defs>
+              <linearGradient id="alertGrad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#8a2be2" />
+                <stop offset="1" stop-color="#ff007f" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="donor-info">
+          <div class="alert-title">DONATION RECEIVE!</div>
+          <div class="donor-name" id="donor-name">Name</div>
+        </div>
+        <div class="donor-amount" id="donor-amount">0.00 THB</div>
+      </div>
+      
+      <div class="card-body">
+        <div class="donor-message" id="donor-message">"Message"</div>
+      </div>
+      
+      <!-- Timing progress bar -->
+      <div class="progress-bar-container">
+        <div class="progress-bar" id="progress-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/overlay.js"></script>
+</body>
+</html>

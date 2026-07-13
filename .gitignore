@@ -1,0 +1,19 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Cloudflare Tunnel temporary files
+cloudflare.log
+donation-link.txt
+cloudflared.exe
+.stable_marker
+
+# Local Configuration and data storage
+config.json
+donations.json
+
+# OS files
+.DS_Store
+Thumbs.db
