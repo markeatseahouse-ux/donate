@@ -22,6 +22,7 @@ function initSocket() {
   
   socket.on('connect', () => {
     console.log('Connected to server WebSocket');
+    socket.emit('join-room', getTargetUsername());
   });
 
   // Listen for real-time success broadcast
@@ -33,10 +34,17 @@ function initSocket() {
   });
 }
 
+// Extract target streamer username from URL path
+function getTargetUsername() {
+  const pathParts = window.location.pathname.split('/').filter(p => p.length > 0);
+  return pathParts[0] || 'admin';
+}
+
 // Fetch current system configuration
 async function fetchConfig() {
   try {
-    const response = await fetch('/api/config?t=' + Date.now());
+    const targetUsername = getTargetUsername();
+    const response = await fetch(`/api/config?username=${targetUsername}&t=${Date.now()}`);
     config = await response.json();
     
     // Dynamic page branding
@@ -45,12 +53,20 @@ async function fetchConfig() {
     
     const avatarImg = document.querySelector('.streamer-avatar');
     if (avatarImg) {
-      avatarImg.src = `/streamer_logo.jpg?t=${Date.now()}`;
+      avatarImg.src = `/uploads/logos/${config.userId}.jpg?t=${Date.now()}`;
+      avatarImg.onerror = function() {
+        this.src = '/streamer_logo.jpg';
+        this.onerror = null;
+      };
     }
 
     const bannerImg = document.getElementById('streamerBanner');
     if (bannerImg) {
-      bannerImg.src = `/streamer_banner.jpg?t=${Date.now()}`;
+      bannerImg.src = `/uploads/banners/${config.userId}.jpg?t=${Date.now()}`;
+      bannerImg.onerror = function() {
+        this.src = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80';
+        this.onerror = null;
+      };
     }
 
     // Apply custom page accent styling colors dynamically
@@ -161,10 +177,11 @@ async function handleFormSubmit(e) {
   btnSubmit.innerHTML = '<span class="spinner"></span> <span>กำลังสร้าง QR Code...</span>';
 
   try {
+    const targetUsername = getTargetUsername();
     const response = await fetch('/api/donate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, message, amount })
+      body: JSON.stringify({ name, message, amount, username: targetUsername })
     });
 
     const data = await response.json();

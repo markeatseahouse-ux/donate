@@ -4,15 +4,34 @@ let pendingBannerBase64 = null; // Streamer page banner file storage
 let pendingSoundBase64 = null; // Custom chime file storage
 let pendingSoundFilename = '';
 let currentConfig = {};
+let currentUsername = '';
 
 document.addEventListener('DOMContentLoaded', () => {
-  initSocket();
-  fetchConfig();
-  fetchStats();
-  fetchDonations();
+  checkAuth();
   setupEventListeners();
-  populateWidgetLinks();
 });
+
+// Verify Authenticated State
+async function checkAuth() {
+  try {
+    const response = await fetch('/api/auth/me?t=' + Date.now());
+    if (!response.ok) {
+      window.location.href = '/login.html';
+      return;
+    }
+    const data = await response.json();
+    currentUsername = data.user.username;
+    
+    // Initialize Dashboard data loads
+    initSocket();
+    fetchConfig();
+    fetchStats();
+    fetchDonations();
+  } catch (error) {
+    console.error('Authentication check failed:', error);
+    window.location.href = '/login.html';
+  }
+}
 
 // Init Socket connection
 function initSocket() {
@@ -20,6 +39,10 @@ function initSocket() {
 
   socket.on('connect', () => {
     console.log('Admin dashboard connected to WebSocket');
+    // Join scoped streamer room
+    if (currentUsername) {
+      socket.emit('join-room', currentUsername);
+    }
   });
 
   // Listen for real-time payments or queues to trigger updates
@@ -40,27 +63,42 @@ function refreshAllData() {
 
 // Populate the widget browser source link
 function populateWidgetLinks() {
+  const base = `${window.location.origin}/${currentUsername}`;
+
   const goalLinkInput = document.getElementById('goalWidgetLink');
   if (goalLinkInput) {
-    goalLinkInput.value = `${window.location.origin}/goal.html`;
+    goalLinkInput.value = `${base}/goal`;
   }
   
   // Populate Dashboard links
   const viewerLink = document.getElementById('viewerPageLink');
   if (viewerLink) {
-    viewerLink.value = `${window.location.origin}/index.html`;
+    viewerLink.value = `${window.location.origin}/${currentUsername}`;
   }
   
   const overlayLink = document.getElementById('overlayWidgetLink');
   if (overlayLink) {
-    overlayLink.value = `${window.location.origin}/overlay.html`;
+    overlayLink.value = `${base}/overlay`;
   }
   
   const goalDashLink = document.getElementById('goalWidgetLinkDash');
   if (goalDashLink) {
-    goalDashLink.value = `${window.location.origin}/goal.html`;
+    goalDashLink.value = `${base}/goal`;
   }
 }
+
+// Log Out Handler
+window.handleLogout = async function() {
+  if (!confirm('คุณแน่ใจหรือไม่ว่าต้องการออกจากระบบ?')) return;
+  try {
+    const response = await fetch('/api/auth/logout', { method: 'POST' });
+    if (response.ok) {
+      window.location.href = '/login.html';
+    }
+  } catch (err) {
+    console.error('Logout error:', err);
+  }
+};
 
 // Helper to switch dashboard tabs
 window.switchTab = function(tabId) {
@@ -145,11 +183,19 @@ async function fetchConfig() {
 
     // Cache buster for the profile preview image
     const adminLogo = document.getElementById('adminLogoPreview');
-    adminLogo.src = `/streamer_logo.jpg?t=${Date.now()}`;
+    adminLogo.src = `/uploads/logos/${currentConfig.userId}.jpg?t=${Date.now()}`;
+    adminLogo.onerror = function() {
+      this.src = '/streamer_logo.jpg';
+      this.onerror = null; // Prevent infinite loops
+    };
 
     // Cache buster for the banner preview image
     const adminBanner = document.getElementById('adminBannerPreview');
-    adminBanner.src = `/streamer_banner.jpg?t=${Date.now()}`;
+    adminBanner.src = `/uploads/banners/${currentConfig.userId}.jpg?t=${Date.now()}`;
+    adminBanner.onerror = function() {
+      this.src = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80';
+      this.onerror = null;
+    };
 
     toggleVerifyFields();
   } catch (error) {

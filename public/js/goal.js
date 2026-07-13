@@ -5,12 +5,19 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchInitialGoal();
 });
 
+// Get target username from path
+function getTargetUsername() {
+  const pathParts = window.location.pathname.split('/').filter(p => p.length > 0);
+  return pathParts[0] || 'admin';
+}
+
 // Connect to Socket.io
 function initSocket() {
   socket = io();
 
   socket.on('connect', () => {
     console.log('Goal widget connected to WebSocket');
+    socket.emit('join-room', getTargetUsername());
   });
 
   // Listen for real-time goal progress updates
@@ -23,7 +30,8 @@ function initSocket() {
 // Fetch initial goal data on startup
 async function fetchInitialGoal() {
   try {
-    const response = await fetch('/api/config');
+    const targetUsername = getTargetUsername();
+    const response = await fetch(`/api/config?username=${targetUsername}&t=${Date.now()}`);
     const config = await response.json();
     
     updateGoalUI({

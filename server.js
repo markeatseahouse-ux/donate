@@ -6,6 +6,8 @@ const path = require('path');
 const cors = require('cors');
 const axios = require('axios');
 const generatePayload = require('promptpay-qr');
+const bcrypt = require('bcryptjs');
+const cookieSession = require('cookie-session');
 
 const app = express();
 const server = http.createServer(app);
@@ -16,110 +18,187 @@ const io = socketIo(server, {
   }
 });
 
-const CONFIG_PATH = path.join(__dirname, 'config.json');
-const DONATIONS_PATH = path.join(__dirname, 'donations.json');
+// Paths and Directory Setup
+const DATA_DIR = path.join(__dirname, 'data');
+const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
+const LOGOS_DIR = path.join(UPLOADS_DIR, 'logos');
+const BANNERS_DIR = path.join(UPLOADS_DIR, 'banners');
+const SOUNDS_DIR = path.join(UPLOADS_DIR, 'sounds');
+
+[DATA_DIR, UPLOADS_DIR, LOGOS_DIR, BANNERS_DIR, SOUNDS_DIR].forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+});
+
+const USERS_PATH = path.join(DATA_DIR, 'users.json');
+const CONFIGS_PATH = path.join(DATA_DIR, 'configs.json');
+const DONATIONS_PATH = path.join(DATA_DIR, 'donations.json');
+
+// Session setup
+app.use(cookieSession({
+  name: 'session',
+  keys: [process.env.SESSION_SECRET || 'secret-key-seahouse-overlay-app-99'],
+  maxAge: 24 * 60 * 60 * 1000 // 24 hours
+}));
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' })); // Increased limit to support base64 uploads (image/sound)
+app.use(express.json({ limit: '10mb' }));
+
+// Middleware to redirect unauthenticated admin views
+app.get('/admin.html', (req, res, next) => {
+  if (!req.session.userId) {
+    return res.redirect('/login.html');
+  }
+  next();
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Helper to load configurations (Supports Environment Variables for Cloud Deployment)
-function loadConfig() {
-  const defaults = {
+// Data Helpers
+function loadUsers() {
+  if (!fs.existsSync(USERS_PATH)) fs.writeFileSync(USERS_PATH, JSON.stringify([]));
+  return JSON.parse(fs.readFileSync(USERS_PATH, 'utf8') || '[]');
+}
+
+function saveUsers(users) {
+  fs.writeFileSync(USERS_PATH, JSON.stringify(users, null, 2));
+}
+
+function loadConfigs() {
+  if (!fs.existsSync(CONFIGS_PATH)) fs.writeFileSync(CONFIGS_PATH, JSON.stringify([]));
+  return JSON.parse(fs.readFileSync(CONFIGS_PATH, 'utf8') || '[]');
+}
+
+function saveConfigs(configs) {
+  fs.writeFileSync(CONFIGS_PATH, JSON.stringify(configs, null, 2));
+}
+
+function loadDonations() {
+  if (!fs.existsSync(DONATIONS_PATH)) fs.writeFileSync(DONATIONS_PATH, JSON.stringify([]));
+  return JSON.parse(fs.readFileSync(DONATIONS_PATH, 'utf8') || '[]');
+}
+
+function saveDonations(donations) {
+  fs.writeFileSync(DONATIONS_PATH, JSON.stringify(donations, null, 2));
+}
+
+// Config Defaults Maker
+function makeDefaultConfig(userId) {
+  return {
+    userId,
     promptpayId: '0812345678', 
     verifyMode: 'simulate',    
     easyslipApiKey: '',
     streamerName: 'SEAHOUSE STREAM',
     streamerDescription: 'ขอบคุณทุกแรงสนับสนุนสำหรับการพัฒนาช่องและคอมมูนิตี้ของเราครับ!',
-    bannedWords: 'ควย,สัส,เหี้ย,มึง,เย็ด,จู๋,หี,แตด,ชิบหาย,ฟาย,shyt,darn,fck', // Default word filters
+    bannedWords: 'ควย,สัส,เหี้ย,มึง,เย็ด,จู๋,หี,แตด,ชิบหาย,ฟาย,shyt,darn,fck',
     requireApproval: false,
     minAmountTts: 1,
-    minDonateAmount: 1, // General minimum donation amount (default 1 Baht)
+    minDonateAmount: 1,
     ttsSpeed: 1.0,
     ttsPitch: 1.0,
     soundVolume: 0.8,
-    overlayAccentColor: '#ff007f', // Cyber pink default
+    overlayAccentColor: '#ff007f', 
     overlayTextColor: '#ffffff',
     alertAnimation: 'slide',
-    alertSoundFile: '', // Optional custom sound
+    alertSoundFile: '',
     goalEnabled: false,
     goalTitle: 'สมทบทุนซื้ออุปกรณ์สตรีม',
     goalTarget: 5000,
     goalCurrent: 0,
-    viewerAccentColor: '#8a2be2', // Default purple accent for viewer page
-    viewerBannerFile: '' // Optional custom banner
+    viewerAccentColor: '#8a2be2',
+    viewerBannerFile: ''
   };
+}
 
-  if (!fs.existsSync(CONFIG_PATH)) {
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(defaults, null, 2));
-    return defaults;
-  }
-  try {
-    const data = fs.readFileSync(CONFIG_PATH, 'utf8');
-    const diskConfig = JSON.parse(data);
+// Automatic Migration helper (Imports legacy single-user config.json and donations.json)
+(function migrateLegacyData() {
+  const legacyConfigPath = path.join(__dirname, 'config.json');
+  const legacyDonationsPath = path.join(__dirname, 'donations.json');
+  
+  if (fs.existsSync(legacyConfigPath)) {
+    console.log('[Migration] Legacy config file detected. Starting data migration...');
+    const users = loadUsers();
     
-    // PRIORITIZE diskConfig OVER process.env
-    return {
-      promptpayId: diskConfig.promptpayId || process.env.PROMPTPAY_ID || defaults.promptpayId,
-      verifyMode: diskConfig.verifyMode || process.env.VERIFY_MODE || defaults.verifyMode,
-      easyslipApiKey: diskConfig.easyslipApiKey || process.env.EASYSLIP_API_KEY || defaults.easyslipApiKey,
-      streamerName: diskConfig.streamerName || process.env.STREAMER_NAME || defaults.streamerName,
-      streamerDescription: diskConfig.streamerDescription || process.env.STREAMER_DESC || defaults.streamerDescription,
-      bannedWords: diskConfig.bannedWords !== undefined ? diskConfig.bannedWords : defaults.bannedWords,
-      requireApproval: diskConfig.requireApproval !== undefined ? diskConfig.requireApproval : defaults.requireApproval,
-      minAmountTts: diskConfig.minAmountTts !== undefined ? Number(diskConfig.minAmountTts) : defaults.minAmountTts,
-      minDonateAmount: diskConfig.minDonateAmount !== undefined ? Number(diskConfig.minDonateAmount) : defaults.minDonateAmount,
-      ttsSpeed: diskConfig.ttsSpeed !== undefined ? Number(diskConfig.ttsSpeed) : defaults.ttsSpeed,
-      ttsPitch: diskConfig.ttsPitch !== undefined ? Number(diskConfig.ttsPitch) : defaults.ttsPitch,
-      soundVolume: diskConfig.soundVolume !== undefined ? Number(diskConfig.soundVolume) : defaults.soundVolume,
-      overlayAccentColor: diskConfig.overlayAccentColor || defaults.overlayAccentColor,
-      overlayTextColor: diskConfig.overlayTextColor || defaults.overlayTextColor,
-      alertAnimation: diskConfig.alertAnimation || defaults.alertAnimation,
-      alertSoundFile: diskConfig.alertSoundFile || defaults.alertSoundFile,
-      goalEnabled: diskConfig.goalEnabled !== undefined ? diskConfig.goalEnabled : defaults.goalEnabled,
-      goalTitle: diskConfig.goalTitle || defaults.goalTitle,
-      goalTarget: diskConfig.goalTarget !== undefined ? Number(diskConfig.goalTarget) : defaults.goalTarget,
-      goalCurrent: diskConfig.goalCurrent !== undefined ? Number(diskConfig.goalCurrent) : defaults.goalCurrent,
-      viewerAccentColor: diskConfig.viewerAccentColor || defaults.viewerAccentColor,
-      viewerBannerFile: diskConfig.viewerBannerFile || defaults.viewerBannerFile
-    };
-  } catch (err) {
-    console.error('Error reading config.json, using defaults', err);
-    return defaults;
+    // Check if we already migrated
+    if (users.length === 0) {
+      const defaultUserId = 'usr_' + Date.now();
+      const defaultPassword = 'admin123';
+      const salt = bcrypt.genSaltSync(10);
+      const passwordHash = bcrypt.hashSync(defaultPassword, salt);
+      
+      const adminUser = {
+        id: defaultUserId,
+        username: 'admin',
+        passwordHash,
+        role: 'admin',
+        createdAt: new Date().toISOString()
+      };
+      
+      users.push(adminUser);
+      saveUsers(users);
+      console.log(`[Migration] Created default 'admin' account with password 'admin123'`);
+      
+      // Migrate Config
+      let legacyConfig = {};
+      try {
+        legacyConfig = JSON.parse(fs.readFileSync(legacyConfigPath, 'utf8'));
+      } catch(err) {
+        console.error('Failed to parse legacy config', err);
+      }
+      
+      const baseDefaults = makeDefaultConfig(defaultUserId);
+      const migratedConfig = Object.assign({}, baseDefaults, legacyConfig, { userId: defaultUserId });
+      
+      const configs = loadConfigs();
+      configs.push(migratedConfig);
+      saveConfigs(configs);
+      
+      // Migrate Image Assets if they exist
+      const legacyLogo = path.join(__dirname, 'public', 'streamer_logo.jpg');
+      if (fs.existsSync(legacyLogo)) {
+        fs.copyFileSync(legacyLogo, path.join(LOGOS_DIR, `${defaultUserId}.jpg`));
+      }
+      const legacyBanner = path.join(__dirname, 'public', 'streamer_banner.jpg');
+      if (fs.existsSync(legacyBanner)) {
+        fs.copyFileSync(legacyBanner, path.join(BANNERS_DIR, `${defaultUserId}.jpg`));
+      }
+      
+      // Migrate Donations
+      if (fs.existsSync(legacyDonationsPath)) {
+        let legacyDonations = [];
+        try {
+          legacyDonations = JSON.parse(fs.readFileSync(legacyDonationsPath, 'utf8'));
+        } catch(err) {}
+        
+        const migratedDonations = legacyDonations.map(d => {
+          return Object.assign({}, d, { userId: defaultUserId });
+        });
+        
+        const donations = loadDonations();
+        saveDonations(donations.concat(migratedDonations));
+      }
+      
+      // Rename files to prevent duplicate migrations
+      try {
+        fs.renameSync(legacyConfigPath, legacyConfigPath + '.bak');
+        if (fs.existsSync(legacyDonationsPath)) {
+          fs.renameSync(legacyDonationsPath, legacyDonationsPath + '.bak');
+        }
+        console.log('[Migration] Single-user config successfully migrated to multi-tenant DB.');
+      } catch (err) {
+        console.error('[Migration] Failed renaming backup files:', err);
+      }
+    }
   }
-}
-
-// Helper to save configurations
-function saveConfig(config) {
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
-}
-
-// Helper to load donations
-function loadDonations() {
-  if (!fs.existsSync(DONATIONS_PATH)) {
-    fs.writeFileSync(DONATIONS_PATH, JSON.stringify([], null, 2));
-    return [];
-  }
-  try {
-    const data = fs.readFileSync(DONATIONS_PATH, 'utf8');
-    return JSON.parse(data);
-  } catch (err) {
-    console.error('Error reading donations.json, returning empty array', err);
-    return [];
-  }
-}
-
-// Helper to save donations
-function saveDonations(donations) {
-  fs.writeFileSync(DONATIONS_PATH, JSON.stringify(donations, null, 2));
-}
+})();
 
 // Advanced Profanity filter with safe-words check for Thai compatibility
 function filterProfanity(text, bannedWordsStr) {
   if (!text) return '';
   if (!bannedWordsStr) return text;
   
-  // List of common safe Thai words containing substrings like "อม", "กู", "หี"
   const safeWords = [
     "ยอม", "หอม", "ผอม", "ซ่อม", "ปลอม", "พร้อม", "ออม", "จอม", "ถนอม", "มอม", 
     "คอม", "ซ้อม", "ตรอม", "กลม", "หีบ", "กูรู", "กูเกิล", "กูเกิ้ล", "กระดูก", 
@@ -143,7 +222,6 @@ function filterProfanity(text, bannedWordsStr) {
     }
     
     filtered = filtered.replace(regex, (match, offset) => {
-      // Check surrounding context of the match to verify it isn't part of a safe word
       const startContext = Math.max(0, offset - 5);
       const endContext = Math.min(text.length, offset + match.length + 5);
       const contextText = text.substring(startContext, endContext);
@@ -153,11 +231,10 @@ function filterProfanity(text, bannedWordsStr) {
           const matchInContextIndex = offset - startContext;
           const safeInContextIndex = contextText.indexOf(safe);
           
-          // If the match falls entirely within a safe word, skip replacement
           if (safeInContextIndex !== -1 && 
               matchInContextIndex >= safeInContextIndex && 
               (matchInContextIndex + match.length) <= (safeInContextIndex + safe.length)) {
-            return match; // Keep the original string
+            return match; 
           }
         }
       }
@@ -201,17 +278,21 @@ function parseNotificationText(title, text) {
   return { amount, sender };
 }
 
-// Safe helper to complete/authorize payment logic
-function completePayment(donation, config) {
+// Safe helper to complete payment logic
+function completePayment(donation, config, username) {
   donation.status = config.requireApproval ? 'pending_approval' : 'paid';
   donation.paidAt = new Date().toISOString();
   
-  // Increment Goal progress if enabled
   if (config.goalEnabled) {
     config.goalCurrent = (config.goalCurrent || 0) + donation.amount;
-    saveConfig(config);
-    // Broadcast goal update instantly
-    io.emit('goal-update', {
+    const configs = loadConfigs();
+    const configIndex = configs.findIndex(c => c.userId === config.userId);
+    if (configIndex !== -1) {
+      configs[configIndex] = config;
+      saveConfigs(configs);
+    }
+    // Broadcast goal update inside channel room
+    io.to(username.toLowerCase()).emit('goal-update', {
       title: config.goalTitle,
       target: config.goalTarget,
       current: config.goalCurrent,
@@ -220,11 +301,11 @@ function completePayment(donation, config) {
   }
 
   if (config.requireApproval) {
-    // Send to admin approvals queue
-    io.emit('admin-pending-approval', donation);
+    // Send only to active admin console
+    io.to(username.toLowerCase()).emit('admin-pending-approval', donation);
   } else {
-    // Send directly to overlay screen
-    io.emit('donation-alert', {
+    // Send to channel overlays
+    io.to(username.toLowerCase()).emit('donation-alert', {
       id: donation.id,
       name: donation.name,
       senderRealName: donation.senderName || donation.name,
@@ -239,13 +320,28 @@ function completePayment(donation, config) {
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
   
-  // Immediately send goal status to newly connected browser sources
-  const config = loadConfig();
-  socket.emit('goal-update', {
-    title: config.goalTitle,
-    target: config.goalTarget,
-    current: config.goalCurrent,
-    enabled: config.goalEnabled
+  // Scoped room register
+  socket.on('join-room', (username) => {
+    if (!username) return;
+    const cleanRoom = username.trim().toLowerCase();
+    socket.join(cleanRoom);
+    console.log(`Socket ${socket.id} joined room: ${cleanRoom}`);
+    
+    // Emit correct goal update
+    const users = loadUsers();
+    const targetUser = users.find(u => u.username.toLowerCase() === cleanRoom);
+    if (targetUser) {
+      const configs = loadConfigs();
+      const config = configs.find(c => c.userId === targetUser.id);
+      if (config) {
+        socket.emit('goal-update', {
+          title: config.goalTitle,
+          target: config.goalTarget,
+          current: config.goalCurrent,
+          enabled: config.goalEnabled
+        });
+      }
+    }
   });
 
   socket.on('disconnect', () => {
@@ -253,17 +349,130 @@ io.on('connection', (socket) => {
   });
 });
 
-// --- REST API ENDPOINTS ---
+// --- API AUTHENTICATION ENDPOINTS ---
 
-// Config APIs
+app.post('/api/auth/register', (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'กรุณากรอก Username และ Password' });
+  }
+  
+  const cleanUsername = username.trim().toLowerCase();
+  if (cleanUsername.length < 3 || !/^[a-zA-Z0-9_\-]+$/.test(cleanUsername)) {
+    return res.status(400).json({ error: 'Username ต้องมีความยาว 3 ตัวอักษรขึ้นไป และสามารถใช้ได้เฉพาะ A-Z, 0-9, _, - เท่านั้น' });
+  }
+
+  const users = loadUsers();
+  if (users.find(u => u.username.toLowerCase() === cleanUsername)) {
+    return res.status(400).json({ error: 'ชื่อผู้ใช้งานนี้ถูกสมัครไปแล้ว' });
+  }
+
+  const userId = 'usr_' + Date.now();
+  const salt = bcrypt.genSaltSync(10);
+  const passwordHash = bcrypt.hashSync(password, salt);
+
+  const newUser = {
+    id: userId,
+    username: cleanUsername,
+    passwordHash,
+    role: 'streamer',
+    createdAt: new Date().toISOString()
+  };
+
+  users.push(newUser);
+  saveUsers(users);
+
+  // Initialize Default configs
+  const configs = loadConfigs();
+  const defConfig = makeDefaultConfig(userId);
+  configs.push(defConfig);
+  saveConfigs(configs);
+
+  req.session.userId = userId;
+  res.json({ success: true, user: { id: userId, username: cleanUsername } });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'กรุณากรอกข้อมูลให้ครบถ้วน' });
+  }
+
+  const cleanUsername = username.trim().toLowerCase();
+  const users = loadUsers();
+  const user = users.find(u => u.username.toLowerCase() === cleanUsername);
+
+  if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
+    return res.status(401).json({ error: 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง' });
+  }
+
+  req.session.userId = user.id;
+  res.json({ success: true, user: { id: user.id, username: user.username } });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  req.session = null;
+  res.json({ success: true });
+});
+
+app.get('/api/auth/me', (req, res) => {
+  if (!req.session.userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const users = loadUsers();
+  const user = users.find(u => u.id === req.session.userId);
+  if (!user) {
+    return res.status(401).json({ error: 'User not found' });
+  }
+  res.json({ user: { id: user.id, username: user.username, role: user.role } });
+});
+
+// --- SCAPED CONFIG & ASSET APIS ---
+
 app.get('/api/config', (req, res) => {
-  res.json(loadConfig());
+  const targetUsername = req.query.username;
+  const configs = loadConfigs();
+  
+  if (targetUsername) {
+    // Public fetch scoped config by username (Viewer or OBS Overlay queries)
+    const users = loadUsers();
+    const user = users.find(u => u.username.toLowerCase() === targetUsername.trim().toLowerCase());
+    if (!user) {
+      return res.status(404).json({ error: 'Streamer not found' });
+    }
+    const config = configs.find(c => c.userId === user.id);
+    if (!config) return res.status(404).json({ error: 'Config not initialized' });
+    
+    // Sanitize secret API tokens for public requests
+    const publicConfig = Object.assign({}, config);
+    delete publicConfig.easyslipApiKey;
+    publicConfig.userId = user.id;
+    return res.json(publicConfig);
+  }
+
+  // Admin scopes configs
+  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+  
+  let config = configs.find(c => c.userId === req.session.userId);
+  if (!config) {
+    config = makeDefaultConfig(req.session.userId);
+    configs.push(config);
+    saveConfigs(configs);
+  }
+  res.json(config);
 });
 
 app.post('/api/config', (req, res) => {
-  const config = loadConfig();
+  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
   
-  // Object assign values from body
+  const configs = loadConfigs();
+  const configIndex = configs.findIndex(c => c.userId === req.session.userId);
+  
+  if (configIndex === -1) {
+    return res.status(404).json({ error: 'Config entity not found' });
+  }
+
+  const existingConfig = configs[configIndex];
   const { 
     promptpayId, verifyMode, easyslipApiKey, streamerName, streamerDescription,
     bannedWords, requireApproval, minAmountTts, minDonateAmount, ttsSpeed, ttsPitch, soundVolume,
@@ -272,149 +481,150 @@ app.post('/api/config', (req, res) => {
     viewerAccentColor, viewerBannerFile
   } = req.body;
 
-  if (!promptpayId) {
-    return res.status(400).json({ error: 'PromptPay ID is required' });
-  }
-
-  const updatedConfig = {
-    promptpayId,
-    verifyMode,
-    easyslipApiKey,
-    streamerName,
-    streamerDescription,
-    bannedWords: bannedWords !== undefined ? bannedWords : config.bannedWords,
-    requireApproval: requireApproval !== undefined ? !!requireApproval : config.requireApproval,
-    minAmountTts: minAmountTts !== undefined ? Number(minAmountTts) : config.minAmountTts,
-    minDonateAmount: minDonateAmount !== undefined ? Number(minDonateAmount) : config.minDonateAmount,
-    ttsSpeed: ttsSpeed !== undefined ? Number(ttsSpeed) : config.ttsSpeed,
-    ttsPitch: ttsPitch !== undefined ? Number(ttsPitch) : config.ttsPitch,
-    soundVolume: soundVolume !== undefined ? Number(soundVolume) : config.soundVolume,
-    overlayAccentColor: overlayAccentColor || config.overlayAccentColor,
-    overlayTextColor: overlayTextColor || config.overlayTextColor,
-    alertAnimation: alertAnimation || config.alertAnimation,
-    alertSoundFile: alertSoundFile !== undefined ? alertSoundFile : config.alertSoundFile,
-    goalEnabled: goalEnabled !== undefined ? !!goalEnabled : config.goalEnabled,
-    goalTitle: goalTitle || config.goalTitle,
-    goalTarget: goalTarget !== undefined ? Number(goalTarget) : config.goalTarget,
-    goalCurrent: goalCurrent !== undefined ? Number(goalCurrent) : config.goalCurrent,
-    viewerAccentColor: viewerAccentColor || config.viewerAccentColor,
-    viewerBannerFile: viewerBannerFile !== undefined ? viewerBannerFile : config.viewerBannerFile
-  };
-
-  saveConfig(updatedConfig);
-  
-  // Broadcast update to goal widgets immediately in case goal configuration changed
-  io.emit('goal-update', {
-    title: updatedConfig.goalTitle,
-    target: updatedConfig.goalTarget,
-    current: updatedConfig.goalCurrent,
-    enabled: updatedConfig.goalEnabled
+  const updatedConfig = Object.assign({}, existingConfig, {
+    promptpayId: promptpayId || existingConfig.promptpayId,
+    verifyMode: verifyMode || existingConfig.verifyMode,
+    easyslipApiKey: easyslipApiKey !== undefined ? easyslipApiKey : existingConfig.easyslipApiKey,
+    streamerName: streamerName || existingConfig.streamerName,
+    streamerDescription: streamerDescription !== undefined ? streamerDescription : existingConfig.streamerDescription,
+    bannedWords: bannedWords !== undefined ? bannedWords : existingConfig.bannedWords,
+    requireApproval: requireApproval !== undefined ? !!requireApproval : existingConfig.requireApproval,
+    minAmountTts: minAmountTts !== undefined ? Number(minAmountTts) : existingConfig.minAmountTts,
+    minDonateAmount: minDonateAmount !== undefined ? Number(minDonateAmount) : existingConfig.minDonateAmount,
+    ttsSpeed: ttsSpeed !== undefined ? Number(ttsSpeed) : existingConfig.ttsSpeed,
+    ttsPitch: ttsPitch !== undefined ? Number(ttsPitch) : existingConfig.ttsPitch,
+    soundVolume: soundVolume !== undefined ? Number(soundVolume) : existingConfig.soundVolume,
+    overlayAccentColor: overlayAccentColor || existingConfig.overlayAccentColor,
+    overlayTextColor: overlayTextColor || existingConfig.overlayTextColor,
+    alertAnimation: alertAnimation || existingConfig.alertAnimation,
+    alertSoundFile: alertSoundFile !== undefined ? alertSoundFile : existingConfig.alertSoundFile,
+    goalEnabled: goalEnabled !== undefined ? !!goalEnabled : existingConfig.goalEnabled,
+    goalTitle: goalTitle || existingConfig.goalTitle,
+    goalTarget: goalTarget !== undefined ? Number(goalTarget) : existingConfig.goalTarget,
+    goalCurrent: goalCurrent !== undefined ? Number(goalCurrent) : existingConfig.goalCurrent,
+    viewerAccentColor: viewerAccentColor || existingConfig.viewerAccentColor,
+    viewerBannerFile: viewerBannerFile !== undefined ? viewerBannerFile : existingConfig.viewerBannerFile
   });
+
+  configs[configIndex] = updatedConfig;
+  saveConfigs(configs);
+
+  // Broadcast dynamic update to goal OBS widgets
+  const users = loadUsers();
+  const user = users.find(u => u.id === req.session.userId);
+  if (user) {
+    io.to(user.username.toLowerCase()).emit('goal-update', {
+      title: updatedConfig.goalTitle,
+      target: updatedConfig.goalTarget,
+      current: updatedConfig.goalCurrent,
+      enabled: updatedConfig.goalEnabled
+    });
+  }
 
   res.json({ message: 'Configuration saved successfully', config: updatedConfig });
 });
 
-// Logo Upload Endpoint
+// Logo Custom Upload
 app.post('/api/upload-logo', (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
   const { imageBase64 } = req.body;
-  if (!imageBase64) {
-    return res.status(400).json({ error: 'No image data provided' });
-  }
+  if (!imageBase64) return res.status(400).json({ error: 'No image data provided' });
   
   try {
     const buffer = Buffer.from(imageBase64, 'base64');
-    const targetPath = path.join(__dirname, 'public', 'streamer_logo.jpg');
-    
+    const targetPath = path.join(LOGOS_DIR, `${req.session.userId}.jpg`);
     fs.writeFileSync(targetPath, buffer);
-    res.json({ success: true, message: 'Streamer logo updated successfully' });
+    res.json({ success: true, message: 'Logo successfully updated' });
   } catch (error) {
     console.error('Logo upload error:', error);
-    res.status(500).json({ error: 'Failed to save logo image file' });
+    res.status(500).json({ error: 'Failed uploading logo' });
   }
 });
 
-// Banner Image Upload Endpoint
+// Banner Custom Upload
 app.post('/api/upload-banner', (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
   const { imageBase64 } = req.body;
-  if (!imageBase64) {
-    return res.status(400).json({ error: 'No image data provided' });
-  }
+  if (!imageBase64) return res.status(400).json({ error: 'No image data provided' });
   
   try {
     const buffer = Buffer.from(imageBase64, 'base64');
-    const targetPath = path.join(__dirname, 'public', 'streamer_banner.jpg');
-    
+    const targetPath = path.join(BANNERS_DIR, `${req.session.userId}.jpg`);
     fs.writeFileSync(targetPath, buffer);
     
-    const config = loadConfig();
-    config.viewerBannerFile = 'streamer_banner.jpg';
-    saveConfig(config);
+    const configs = loadConfigs();
+    const configIndex = configs.findIndex(c => c.userId === req.session.userId);
+    if (configIndex !== -1) {
+      configs[configIndex].viewerBannerFile = `/uploads/banners/${req.session.userId}.jpg`;
+      saveConfigs(configs);
+    }
     
-    res.json({ success: true, message: 'Streamer banner updated successfully' });
+    res.json({ success: true, message: 'Banner successfully updated' });
   } catch (error) {
     console.error('Banner upload error:', error);
-    res.status(500).json({ error: 'Failed to save banner image file' });
+    res.status(500).json({ error: 'Failed uploading banner' });
   }
 });
 
 // Custom sound file upload endpoint
 app.post('/api/upload-sound', (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
   const { soundBase64, filename } = req.body;
-  if (!soundBase64) {
-    return res.status(400).json({ error: 'No sound data provided' });
-  }
+  if (!soundBase64) return res.status(400).json({ error: 'No sound data provided' });
   
   try {
     const ext = path.extname(filename || 'alert.mp3').toLowerCase();
     const buffer = Buffer.from(soundBase64, 'base64');
-    const targetFilename = `alert_chime${ext}`;
-    const targetPath = path.join(__dirname, 'public', targetFilename);
-    
-    // Clean old files
-    const possibleFiles = ['alert_chime.mp3', 'alert_chime.wav', 'alert_chime.ogg'];
-    for (const f of possibleFiles) {
-      const p = path.join(__dirname, 'public', f);
-      if (fs.existsSync(p)) {
-        try { fs.unlinkSync(p); } catch(err){}
-      }
-    }
+    const targetFilename = `${req.session.userId}${ext}`;
+    const targetPath = path.join(SOUNDS_DIR, targetFilename);
     
     fs.writeFileSync(targetPath, buffer);
     
-    // Write into config
-    const config = loadConfig();
-    config.alertSoundFile = targetFilename;
-    saveConfig(config);
+    const configs = loadConfigs();
+    const configIndex = configs.findIndex(c => c.userId === req.session.userId);
+    if (configIndex !== -1) {
+      configs[configIndex].alertSoundFile = `/uploads/sounds/${targetFilename}`;
+      saveConfigs(configs);
+    }
     
-    res.json({ success: true, message: 'Sound chime uploaded successfully', filename: targetFilename });
+    res.json({ success: true, message: 'Sound uploaded successfully', filename: `/uploads/sounds/${targetFilename}` });
   } catch (error) {
     console.error('Sound upload error:', error);
-    res.status(500).json({ error: 'Failed to save sound file' });
+    res.status(500).json({ error: 'Failed uploading audio sound' });
   }
 });
 
-// Donations list API
+// --- DONATIONS APIS ---
+
 app.get('/api/donations', (req, res) => {
-  res.json(loadDonations());
+  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+  const donations = loadDonations();
+  res.json(donations.filter(d => d.userId === req.session.userId));
 });
 
-// Register a Donation (Applies profanity filtering)
 app.post('/api/donate', (req, res) => {
-  const { name, message, amount } = req.body;
+  const { name, message, amount, username } = req.body;
   
+  if (!username) return res.status(400).json({ error: 'Username target is required' });
   if (!name || !amount || isNaN(amount) || parseFloat(amount) <= 0) {
     return res.status(400).json({ error: 'Invalid name or amount' });
   }
+
+  const users = loadUsers();
+  const targetUser = users.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
+  if (!targetUser) return res.status(400).json({ error: 'สตรีมเมอร์เป้าหมายไม่ปรากฏในระบบ' });
   
-  const config = loadConfig();
+  const configs = loadConfigs();
+  const config = configs.find(c => c.userId === targetUser.id);
+  if (!config) return res.status(400).json({ error: 'Config details missing' });
   
-  // Enforce general minimum donation amount validation
+  // Enforce general minimum validation
   const minAmount = Number(config.minDonateAmount) || 1;
   if (parseFloat(amount) < minAmount) {
     return res.status(400).json({ error: `จำนวนเงินสนับสนุนต่ำกว่าเกณฑ์ขั้นต่ำ (${minAmount} บาท)` });
   }
   
-  // Filter profanity on name and message
+  // Filter profanity
   const filteredName = filterProfanity(name.trim(), config.bannedWords);
   const filteredMessage = filterProfanity((message || '').trim(), config.bannedWords);
   
@@ -423,6 +633,7 @@ app.post('/api/donate', (req, res) => {
   
   const donation = {
     id: donationId,
+    userId: targetUser.id,
     name: filteredName,
     message: filteredMessage,
     amount: parseFloat(amount),
@@ -443,52 +654,55 @@ app.post('/api/donate', (req, res) => {
   });
 });
 
-// Trigger Mock Success manually or automatically in simulation mode
 app.post('/api/simulate-success', (req, res) => {
   const { donationId } = req.body;
   const donations = loadDonations();
   const donationIndex = donations.findIndex(d => d.id === donationId);
   
-  if (donationIndex === -1) {
-    return res.status(404).json({ error: 'Donation not found' });
-  }
-  
+  if (donationIndex === -1) return res.status(404).json({ error: 'Donation not found' });
   const donation = donations[donationIndex];
+  
   if (donation.status === 'paid' || donation.status === 'pending_approval') {
     return res.status(400).json({ error: 'Donation already processed' });
   }
   
-  const config = loadConfig();
-  completePayment(donation, config);
+  const users = loadUsers();
+  const user = users.find(u => u.id === donation.userId);
+  if (!user) return res.status(400).json({ error: 'Associated user missing' });
+  
+  const configs = loadConfigs();
+  const config = configs.find(c => c.userId === donation.userId);
+  
+  completePayment(donation, config, user.username);
   saveDonations(donations);
   
   res.json({ success: true, donation });
 });
 
-// Verify Slip using EasySlip API v2
 app.post('/api/verify', async (req, res) => {
   const { qrData, donationId } = req.body;
-  
   if (!qrData || !donationId) {
     return res.status(400).json({ error: 'QR Data and Donation ID are required' });
   }
   
   const donations = loadDonations();
   const donationIndex = donations.findIndex(d => d.id === donationId);
-  if (donationIndex === -1) {
-    return res.status(404).json({ error: 'Donation record not found' });
-  }
+  if (donationIndex === -1) return res.status(404).json({ error: 'Donation not found' });
   
   const donation = donations[donationIndex];
   if (donation.status === 'paid' || donation.status === 'pending_approval') {
     return res.json({ success: true, message: 'Already processed', donation });
   }
+
+  const users = loadUsers();
+  const user = users.find(u => u.id === donation.userId);
+  if (!user) return res.status(400).json({ error: 'Target user missing' });
+
+  const configs = loadConfigs();
+  const config = configs.find(c => c.userId === donation.userId);
   
-  const config = loadConfig();
-  
-  // Guard check for Simulation Mode vs EasySlip Mode
   if (config.verifyMode === 'simulate') {
-    completePayment(donation, config);
+    completePayment(donation, config, user.username);
     saveDonations(donations);
     return res.json({ success: true, message: 'Simulated payment verified', donation });
   }
@@ -504,26 +718,18 @@ app.post('/api/verify', async (req, res) => {
       donation.transRef = 'MOCK_REF_' + Date.now();
       donation.senderName = 'ผู้โอนตัวจริง (สแกนทดสอบ)';
       
-      completePayment(donation, config);
+      completePayment(donation, config, user.username);
       saveDonations(donations);
       
-      return res.json({ 
-        success: true, 
-        message: 'ตรวจสลิปทดสอบสำเร็จ (ไม่ต้องใช้ API Key)', 
-        donation 
-      });
+      return res.json({ success: true, message: 'ตรวจสลิปทดสอบสำเร็จ', donation });
     }
-    
-    return res.status(400).json({ error: 'ตั้งค่า API Key ของ EasySlip ไม่ครบถ้วน และ QR Code ของสลิปไม่ถูกต้อง' });
+    return res.status(400).json({ error: 'ตั้งค่า API Key ของ EasySlip ไม่ครบถ้วน' });
   }
   
   try {
     const response = await axios.post(
       'https://api.easyslip.com/v2/verify/bank',
-      {
-        payload: qrData,
-        matchAmount: donation.amount
-      },
+      { payload: qrData, matchAmount: donation.amount },
       {
         headers: {
           'Authorization': `Bearer ${config.easyslipApiKey}`,
@@ -533,13 +739,11 @@ app.post('/api/verify', async (req, res) => {
     );
     
     const result = response.data;
-    
     if (result.success === true) {
       const slipData = result.data;
-      
       const slipAmount = parseFloat(slipData.amountInSlip);
       if (Math.abs(slipAmount - donation.amount) > 0.01) {
-        return res.status(400).json({ error: `ยอดเงินในสลิป (${slipAmount} THB) ไม่ตรงกับยอดที่ระบุ (${donation.amount} THB)` });
+        return res.status(400).json({ error: `ยอดเงินในสลิปไม่ตรงกับยอดที่กำหนด` });
       }
       
       const rawSenderName = slipData.rawSlip?.sender?.displayName || slipData.rawSlip?.sender?.nameTh || donation.name;
@@ -549,48 +753,50 @@ app.post('/api/verify', async (req, res) => {
       donation.transRef = slipData.transRef;
       donation.senderName = filteredSenderName;
       
-      completePayment(donation, config);
+      completePayment(donation, config, user.username);
       saveDonations(donations);
       
       res.json({ success: true, donation });
     } else {
-      res.status(400).json({ error: result.error?.message || 'สลิปไม่ถูกต้อง หรือไม่ผ่านการตรวจสอบ' });
+      res.status(400).json({ error: result.error?.message || 'สลิปไม่ถูกต้อง' });
     }
   } catch (error) {
     console.error('EasySlip API Error:', error.response?.data || error.message);
-    const errorMsg = error.response?.data?.error?.message || 'การเชื่อมต่อ EasySlip ล้มเหลว โปรดตรวจสอบคีย์ API';
-    res.status(500).json({ error: errorMsg });
+    res.status(500).json({ error: 'เชื่อมต่อตรวจสลิปล้มเหลว' });
   }
 });
 
-// --- METHOD 1: Mobile Notification Webhook (MacroDroid / Tasker) ---
+// webhook macro connection supporting specific username query params
 app.all('/api/webhook/notification', (req, res) => {
+  const username = req.query.username || req.body.username;
+  if (!username) return res.status(400).json({ error: 'Username parameter missing' });
+
   const title = req.query.title || req.body.title || '';
   const text = req.query.text || req.body.text || '';
   
-  console.log(`[Notification Webhook] Received notification via ${req.method}: Title="${title}", Text="${text}"`);
+  console.log(`[Webhook] Scoped webhook for user: ${username}`);
   
-  if (!text) {
-    return res.status(400).json({ error: 'Notification text is required' });
-  }
+  const users = loadUsers();
+  const user = users.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
+  if (!user) return res.status(404).json({ error: 'Target user not found' });
   
+  const configs = loadConfigs();
+  const config = configs.find(c => c.userId === user.id);
+  if (!config) return res.status(400).json({ error: 'Config files missing' });
+
   const parsed = parseNotificationText(title, text);
-  console.log(`[Notification Webhook] Parsed: Amount=${parsed.amount} THB, Sender="${parsed.sender}"`);
-  
   if (!parsed.amount || isNaN(parsed.amount)) {
-    return res.status(200).json({ status: 'ignored', message: 'No valid transfer amount found in notification text' });
+    return res.status(200).json({ status: 'ignored', message: 'No valid transfer amount found' });
   }
   
-  const config = loadConfig();
   const filteredSender = filterProfanity(parsed.sender, config.bannedWords);
   const donations = loadDonations();
   const now = new Date();
-  const timeLimitMs = 20 * 60 * 1000;
   
   const matchIndex = donations.findIndex(d => {
-    if (d.status !== 'pending') return false;
+    if (d.userId !== user.id || d.status !== 'pending') return false;
     const isAmountMatch = Math.abs(d.amount - parsed.amount) < 0.01;
-    const isWithinTime = (now - new Date(d.createdAt)) < timeLimitMs;
+    const isWithinTime = (now - new Date(d.createdAt)) < (20 * 60 * 1000);
     return isAmountMatch && isWithinTime;
   });
   
@@ -598,16 +804,14 @@ app.all('/api/webhook/notification', (req, res) => {
     const donation = donations[matchIndex];
     donation.senderName = filteredSender;
     donation.verificationMethod = 'Notification Forwarder';
-    
-    completePayment(donation, config);
+    completePayment(donation, config, user.username);
     saveDonations(donations);
-    
-    console.log(`[Notification Webhook] Matched pending donation ID ${donation.id} for ${donation.amount} THB`);
     return res.json({ status: 'success', matched: true, donation });
   } else {
     const donationId = 'don_direct_' + Date.now();
     const newDonation = {
       id: donationId,
+      userId: user.id,
       name: `คุณ ${filteredSender} (โอนตรง)`,
       message: filterProfanity('สนับสนุนสตรีมเมอร์ผ่านบัญชีธนาคารโดยตรง', config.bannedWords),
       amount: parsed.amount,
@@ -616,37 +820,33 @@ app.all('/api/webhook/notification', (req, res) => {
       verificationMethod: 'Notification Forwarder (Direct)'
     };
     
-    completePayment(newDonation, config);
+    completePayment(newDonation, config, user.username);
     donations.push(newDonation);
     saveDonations(donations);
-    
-    console.log(`[Notification Webhook] Created direct donation for ${newDonation.amount} THB`);
     return res.json({ status: 'success', matched: false, donation: newDonation });
   }
 });
 
-// Approve Pending Donation
+// Approve Pending Action
 app.post('/api/donations/approve', (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
   const { donationId } = req.body;
-  if (!donationId) return res.status(400).json({ error: 'Donation ID is required' });
   
   const donations = loadDonations();
-  const donationIndex = donations.findIndex(d => d.id === donationId);
-  if (donationIndex === -1) {
-    return res.status(404).json({ error: 'Donation not found' });
-  }
+  const donationIndex = donations.findIndex(d => d.id === donationId && d.userId === req.session.userId);
+  if (donationIndex === -1) return res.status(404).json({ error: 'Donation not found' });
   
   const donation = donations[donationIndex];
-  if (donation.status !== 'pending_approval') {
-    return res.status(400).json({ error: 'Donation is not in pending approval state' });
-  }
+  if (donation.status !== 'pending_approval') return res.status(400).json({ error: 'Not waiting for approval' });
   
   donation.status = 'paid';
   donation.approvedAt = new Date().toISOString();
   saveDonations(donations);
-  
-  // Trigger overlay alert display
-  io.emit('donation-alert', {
+
+  const users = loadUsers();
+  const user = users.find(u => u.id === req.session.userId);
+
+  io.to(user.username.toLowerCase()).emit('donation-alert', {
     id: donation.id,
     name: donation.name,
     senderRealName: donation.senderName || donation.name,
@@ -654,36 +854,33 @@ app.post('/api/donations/approve', (req, res) => {
     amount: donation.amount,
     timestamp: donation.paidAt
   });
-  
+
   res.json({ success: true, donation });
 });
 
-// Reject Pending Donation
+// Reject Pending Action
 app.post('/api/donations/reject', (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
   const { donationId } = req.body;
-  if (!donationId) return res.status(400).json({ error: 'Donation ID is required' });
   
   const donations = loadDonations();
-  const donationIndex = donations.findIndex(d => d.id === donationId);
-  if (donationIndex === -1) {
-    return res.status(404).json({ error: 'Donation not found' });
-  }
+  const donationIndex = donations.findIndex(d => d.id === donationId && d.userId === req.session.userId);
+  if (donationIndex === -1) return res.status(404).json({ error: 'Donation not found' });
   
   const donation = donations[donationIndex];
-  if (donation.status !== 'pending_approval') {
-    return res.status(400).json({ error: 'Donation is not in pending approval state' });
-  }
+  if (donation.status !== 'pending_approval') return res.status(400).json({ error: 'Not waiting for approval' });
   
   donation.status = 'rejected';
   donation.rejectedAt = new Date().toISOString();
   saveDonations(donations);
-  
   res.json({ success: true, donation });
 });
 
-// Get Statistics for Dashboard Summary Tab
+// Get Scoped statistics
 app.get('/api/stats', (req, res) => {
-  const donations = loadDonations();
+  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+  
+  const donations = loadDonations().filter(d => d.userId === req.session.userId);
   const paidAndApproval = donations.filter(d => d.status === 'paid' || d.status === 'pending_approval');
   
   const totalAmount = paidAndApproval.reduce((sum, d) => sum + d.amount, 0);
@@ -695,7 +892,6 @@ app.get('/api/stats', (req, res) => {
     .filter(d => new Date(d.paidAt || d.createdAt) >= startOfToday)
     .reduce((sum, d) => sum + d.amount, 0);
 
-  // Aggregate Top Donators list
   const donorMap = {};
   paidAndApproval.forEach(d => {
     const key = d.name.trim();
@@ -717,12 +913,10 @@ app.get('/api/stats', (req, res) => {
   });
 });
 
-// --- API Proxy for Google Translate TTS (Bypasses Referrer Blocks) ---
+// Scoped Google Speech API Proxy
 app.get('/api/tts', async (req, res) => {
   const { text, lang } = req.query;
-  if (!text) {
-    return res.status(400).send('Text is required');
-  }
+  if (!text) return res.status(400).send('Text is required');
   
   const targetLang = lang || 'th';
   const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${targetLang}&client=tw-ob&q=${encodeURIComponent(text)}`;
@@ -733,22 +927,27 @@ app.get('/api/tts', async (req, res) => {
       url: url,
       responseType: 'stream',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0'
       }
     });
-    
     res.setHeader('Content-Type', 'audio/mpeg');
     response.data.pipe(res);
   } catch (error) {
-    console.error('[TTS Proxy Error]:', error.message);
-    res.status(500).send('Failed to retrieve speech audio');
+    console.error('TTS Proxy error', error.message);
+    res.status(500).send('TTS retrieve failed');
   }
 });
 
-// Trigger a Test Alert from Dashboard (bypasses approval queue for testing ease)
+// Trigger a Test Alert from Dashboard
 app.post('/api/test-alert', (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+  
+  const users = loadUsers();
+  const user = users.find(u => u.id === req.session.userId);
+  const configs = loadConfigs();
+  const config = configs.find(c => c.userId === req.session.userId);
+
   const { name, message, amount } = req.body;
-  const config = loadConfig();
   const filteredName = filterProfanity(name || 'ผู้สนับสนุนปริศนา', config.bannedWords);
   const filteredMessage = filterProfanity(message || 'ขอให้สตรีมเมอร์มีความสุขมากๆ ครับ!', config.bannedWords);
 
@@ -761,18 +960,53 @@ app.post('/api/test-alert', (req, res) => {
     isTest: true
   };
   
-  // Directly broadcast to overlay (bypassing requireApproval queue so testing works instantly)
-  io.emit('donation-alert', testAlert);
+  io.to(user.username.toLowerCase()).emit('donation-alert', testAlert);
   res.json({ success: true, alert: testAlert });
+});
+
+// --- Dynamic Streamer URL catch-all routes ---
+
+app.get('/:username', (req, res, next) => {
+  const cleanName = req.params.username.split('.')[0];
+  if (['api', 'css', 'js', 'uploads', 'login.html', 'admin.html', 'overlay.html', 'goal.html', 'index.html', 'favicon'].includes(cleanName)) {
+    return next();
+  }
+  const users = loadUsers();
+  const user = users.find(u => u.username.toLowerCase() === cleanName.toLowerCase());
+  if (user) {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  } else {
+    res.status(404).send('ไม่พบช่องสตรีมเมอร์นี้ในระบบ');
+  }
+});
+
+app.get('/:username/overlay', (req, res) => {
+  const cleanName = req.params.username.toLowerCase();
+  const users = loadUsers();
+  const user = users.find(u => u.username.toLowerCase() === cleanName);
+  if (user) {
+    res.sendFile(path.join(__dirname, 'public', 'overlay.html'));
+  } else {
+    res.status(404).send('ไม่พบห้องโอเวอร์เลย์สำหรับสตรีมเมอร์นี้');
+  }
+});
+
+app.get('/:username/goal', (req, res) => {
+  const cleanName = req.params.username.toLowerCase();
+  const users = loadUsers();
+  const user = users.find(u => u.username.toLowerCase() === cleanName);
+  if (user) {
+    res.sendFile(path.join(__dirname, 'public', 'goal.html'));
+  } else {
+    res.status(404).send('ไม่พบห้องเป้าหมายสะสมสำหรับสตรีมเมอร์นี้');
+  }
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log('=============================================');
-  console.log(`Donate Overlay System is running!`);
+  console.log(`=======================================================`);
+  console.log(`Multi-tenant Donate Overlay System Online!`);
   console.log(`- Web Server: http://localhost:${PORT}`);
-  console.log(`- Viewer Page: http://localhost:${PORT}/index.html`);
-  console.log(`- OBS Overlay: http://localhost:${PORT}/overlay.html`);
-  console.log(`- Admin Panel: http://localhost:${PORT}/admin.html`);
-  console.log('=============================================');
+  console.log(`- Registration / Admin panel: http://localhost:${PORT}/login.html`);
+  console.log(`=======================================================`);
 });

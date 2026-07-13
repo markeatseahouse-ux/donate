@@ -18,9 +18,12 @@
         <h1 class="gradient-text">DONATE OVERLAY</h1>
         <p style="color: var(--text-muted); font-size: 14px;">ระบบจัดการและตั้งค่าหลังบ้าน (Control Panel)</p>
       </div>
-      <div class="status-indicator">
-        <span class="pulse-dot"></span>
-        <span>ระบบออนไลน์ (Server Online)</span>
+      <div class="status-indicator" style="display: flex; align-items: center; gap: 15px;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span class="pulse-dot"></span>
+          <span>ระบบออนไลน์ (Server Online)</span>
+        </div>
+        <button onclick="handleLogout()" style="width: auto; padding: 6px 12px; font-size: 12.5px; background: rgba(255, 0, 127, 0.15); border: 1px solid rgba(255, 0, 127, 0.3); border-radius: 6px; box-shadow: none; cursor: pointer; text-transform:none; font-weight: normal; color: #ff3366;">ออกจากระบบ</button>
       </div>
     </header>
 
