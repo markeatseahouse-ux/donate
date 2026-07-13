@@ -283,7 +283,8 @@ function completePayment(donation, config, username) {
   donation.status = config.requireApproval ? 'pending_approval' : 'paid';
   donation.paidAt = new Date().toISOString();
   
-  if (config.goalEnabled) {
+  // Increment Goal progress if enabled AND NOT a simulation
+  if (config.goalEnabled && !donation.isSimulation) {
     config.goalCurrent = (config.goalCurrent || 0) + donation.amount;
     const configs = loadConfigs();
     const configIndex = configs.findIndex(c => c.userId === config.userId);
@@ -673,6 +674,8 @@ app.post('/api/simulate-success', (req, res) => {
   const configs = loadConfigs();
   const config = configs.find(c => c.userId === donation.userId);
   
+  donation.isSimulation = true;
+  donation.verificationMethod = 'Simulation';
   completePayment(donation, config, user.username);
   saveDonations(donations);
   
@@ -702,6 +705,8 @@ app.post('/api/verify', async (req, res) => {
   const config = configs.find(c => c.userId === donation.userId);
   
   if (config.verifyMode === 'simulate') {
+    donation.isSimulation = true;
+    donation.verificationMethod = 'Simulation';
     completePayment(donation, config, user.username);
     saveDonations(donations);
     return res.json({ success: true, message: 'Simulated payment verified', donation });
@@ -881,7 +886,7 @@ app.get('/api/stats', (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
   
   const donations = loadDonations().filter(d => d.userId === req.session.userId);
-  const paidAndApproval = donations.filter(d => d.status === 'paid' || d.status === 'pending_approval');
+  const paidAndApproval = donations.filter(d => (d.status === 'paid' || d.status === 'pending_approval') && !d.isSimulation);
   
   const totalAmount = paidAndApproval.reduce((sum, d) => sum + d.amount, 0);
   
