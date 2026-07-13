@@ -123,9 +123,9 @@ window.handleLogout = async function() {
 // Helper to switch dashboard tabs
 window.switchTab = function(tabId) {
   // Toggle tab buttons active class
-  const tabButtons = document.querySelectorAll('.tab-btn');
+  const tabButtons = document.querySelectorAll('.menu-btn');
   tabButtons.forEach(btn => {
-    if (btn.getAttribute('onclick').includes(tabId)) {
+    if (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes(tabId)) {
       btn.classList.add('active');
     } else {
       btn.classList.remove('active');
@@ -170,6 +170,24 @@ async function fetchConfig() {
   try {
     const response = await fetch('/api/config?t=' + Date.now());
     currentConfig = await response.json();
+
+    // Set Sidebar/Header profile text
+    const streamerDisplayName = currentConfig.streamerName || currentUsername;
+    const sidebarStrName = document.getElementById('sidebarStreamerName');
+    if (sidebarStrName) sidebarStrName.innerText = streamerDisplayName;
+    const headerStrName = document.getElementById('headerStreamerName');
+    if (headerStrName) headerStrName.innerText = streamerDisplayName;
+    const sidebarUser = document.getElementById('sidebarUsername');
+    if (sidebarUser) sidebarUser.innerText = currentUsername;
+    
+    const sidebarAvatar = document.getElementById('sidebarAvatar');
+    if (sidebarAvatar) {
+      sidebarAvatar.src = `/uploads/logos/${currentConfig.userId}.jpg?t=` + Date.now();
+      sidebarAvatar.onerror = function() {
+        this.src = '/streamer_logo.jpg';
+        this.onerror = null;
+      };
+    }
 
     // Populate Settings form
     document.getElementById('promptpayId').value = currentConfig.promptpayId || '';
@@ -296,8 +314,14 @@ async function fetchStats() {
     const response = await fetch('/api/stats');
     const stats = await response.json();
 
-    document.getElementById('stat-total-amount').innerText = `${stats.totalAmount.toFixed(2)} THB`;
-    document.getElementById('stat-today-amount').innerText = `${stats.todayAmount.toFixed(2)} THB`;
+    document.getElementById('stat-total-amount').innerText = `${stats.totalAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} THB`;
+    document.getElementById('stat-today-amount').innerText = `${stats.todayAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} THB`;
+    
+    const successCountEl = document.getElementById('stat-success-count');
+    if (successCountEl) {
+      successCountEl.innerText = `${stats.successCount || 0} ครั้ง`;
+    }
+
     document.getElementById('stat-pending-approvals').innerText = stats.approvalCount;
 
     // Moderation queue badge in tab bar
@@ -323,6 +347,7 @@ async function fetchDonations() {
     
     renderDonationsTable(donations);
     renderQueueTable(donations);
+    renderRecentDonationsFeed(donations);
   } catch (error) {
     console.error('Error fetching logs:', error);
   }
@@ -839,10 +864,10 @@ async function renderEarningsChart() {
         datasets: [{
           label: 'ยอดโดเนทรวมรายวัน (THB)',
           data: amounts,
-          borderColor: '#00f2fe',
-          backgroundColor: 'rgba(0, 242, 254, 0.05)',
+          borderColor: '#00ff66',
+          backgroundColor: 'rgba(0, 255, 102, 0.05)',
           borderWidth: 3,
-          pointBackgroundColor: '#00f2fe',
+          pointBackgroundColor: '#00ff66',
           pointBorderColor: '#fff',
           pointHoverRadius: 6,
           fill: true,
@@ -883,4 +908,36 @@ async function renderEarningsChart() {
   } catch (err) {
     console.error('Failed to load chart history:', err);
   }
+}
+
+// Render dynamic Recent Donations feed on right column
+function renderRecentDonationsFeed(donations) {
+  const container = document.getElementById('recentDonationsFeed');
+  if (!container) return;
+
+  // Filter only paid donations and sort newest first
+  const paidOnly = donations.filter(d => d.status === 'paid' && !d.isSimulation);
+  const sorted = [...paidOnly].sort((a, b) => new Date(b.paidAt || b.createdAt) - new Date(a.paidAt || a.createdAt));
+  const recent = sorted.slice(0, 10);
+
+  if (recent.length === 0) {
+    container.innerHTML = `<div class="recent-item-empty">ยังไม่มีข้อมูลรายการโดเนท</div>`;
+    return;
+  }
+
+  container.innerHTML = recent.map(d => {
+    const timeStr = new Date(d.paidAt || d.createdAt).toLocaleTimeString('th-TH', {
+      hour: '2-digit', minute: '2-digit'
+    });
+    return `
+      <div class="recent-item">
+        <div class="recent-meta">
+          <div class="recent-donor">${escapeHtml(d.name)}</div>
+          <div class="recent-msg">${escapeHtml(d.message || 'สนับสนุนสตรีมเมอร์')}</div>
+          <div class="recent-time">${timeStr}</div>
+        </div>
+        <div class="recent-amount">+${d.amount.toFixed(2)} ฿</div>
+      </div>
+    `;
+  }).join('');
 }
