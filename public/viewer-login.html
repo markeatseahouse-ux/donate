@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Donator VIP Portal - เข้าสู่ระบบผู้สนับสนุน</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/admin.css">
+  <style>
+    .auth-card {
+      max-width: 420px;
+      margin: 80px auto;
+      padding: 30px;
+      background: rgba(16, 12, 36, 0.85);
+      border: 1.5px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5);
+      border-radius: 20px;
+      color: #fff;
+    }
+    
+    .badge-display {
+      text-align: center;
+      padding: 15px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      margin-bottom: 20px;
+    }
+
+    .badge-indicator {
+      font-size: 14px;
+      font-weight: 800;
+      padding: 4px 12px;
+      border-radius: 20px;
+      display: inline-block;
+      margin-top: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .badge-gold { background: #ffd700; color: #11071a; box-shadow: 0 0 15px rgba(255, 215, 0, 0.4); }
+    .badge-silver { background: #e0e0e0; color: #11071a; box-shadow: 0 0 15px rgba(224, 224, 224, 0.3); }
+    .badge-bronze { background: #cd7f32; color: #ffffff; box-shadow: 0 0 15px rgba(205, 127, 50, 0.3); }
+    .badge-none { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); }
+
+    .toggle-form {
+      text-align: center;
+      margin-top: 15px;
+      font-size: 13.5px;
+      color: var(--text-muted);
+    }
+
+    .toggle-form a {
+      color: #00f2fe;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body style="min-height: 100vh; display:flex; align-items:center; justify-content:center; background: radial-gradient(circle at top right, #11072a, #070312);">
+
+  <div class="auth-card" id="authCard">
+    <!-- Login Form -->
+    <div id="loginSection">
+      <h2 class="gradient-text" style="font-size: 26px; text-align:center;">🔑 เข้าสู่ระบบผู้สนับสนุน</h2>
+      <p style="text-align:center; color: var(--text-muted); font-size:13px; margin-bottom: 25px;">ล็อกอินเพื่อสะสมยอดบริจาค รับตรา VIP แสดงบนจอสตรีม</p>
+      
+      <form onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label for="loginUser">ชื่อผู้ใช้ (Username)</label>
+          <input type="text" id="loginUser" required placeholder="กรอกชื่อผู้ใช้ภาษาอังกฤษ">
+        </div>
+        <div class="form-group">
+          <label for="loginPass">รหัสผ่าน (Password)</label>
+          <input type="password" id="loginPass" required placeholder="กรอกรหัสผ่าน">
+        </div>
+        <button type="submit" style="background: var(--primary-gradient); font-weight:700;">เข้าสู่ระบบสะสมยอด</button>
+      </form>
+      
+      <div class="toggle-form">
+        ยังไม่มีบัญชีสะสมแต้มใช่หรือไม่? <a onclick="toggleForm('register')">สมัครสมาชิกฟรี</a>
+      </div>
+    </div>
+
+    <!-- Register Form -->
+    <div id="registerSection" style="display: none;">
+      <h2 class="gradient-text" style="font-size: 26px; text-align:center;">📝 สมัครสมาชิกสะสมยอด</h2>
+      <p style="text-align:center; color: var(--text-muted); font-size:13px; margin-bottom: 25px;">สร้างบัญชีผู้สนับสนุนเพื่อรับยศพิเศษในการบริจาค</p>
+      
+      <form onsubmit="handleRegister(event)">
+        <div class="form-group">
+          <label for="regUser">ชื่อผู้ใช้สำหรับล็อกอิน (Username)</label>
+          <input type="text" id="regUser" required placeholder="ภาษาอังกฤษหรือตัวเลข 3 ตัวขึ้นไป">
+        </div>
+        <div class="form-group">
+          <label for="regName">ชื่อแสดงเวลาโดเนท (Display Name)</label>
+          <input type="text" id="regName" required placeholder="เช่น นายสายเปย์, กิตติคุณ">
+        </div>
+        <div class="form-group">
+          <label for="regPass">รหัสผ่าน (Password)</label>
+          <input type="password" id="regPass" required placeholder="กำหนดรหัสผ่าน">
+        </div>
+        <button type="submit" style="background: var(--secondary-gradient); font-weight:700;">สร้างบัญชีผู้บริจาค</button>
+      </form>
+      
+      <div class="toggle-form">
+        มีบัญชีสะสมแต้มอยู่แล้ว? <a onclick="toggleForm('login')">เข้าสู่ระบบเลย</a>
+      </div>
+    </div>
+
+    <!-- Profile Logged-in info -->
+    <div id="profileSection" style="display: none;">
+      <h2 class="gradient-text" style="font-size: 24px; text-align:center;">👤 บัญชีผู้สนับสนุนของคุณ</h2>
+      
+      <div class="badge-display">
+        <div style="font-size:13px; color: var(--text-muted);">ชื่อผู้สนับสนุนระดับพิเศษ</div>
+        <div style="font-size: 22px; font-weight: 800; color: #fff; margin-top: 5px;" id="profileName">Name</div>
+        
+        <div style="margin-top: 15px; font-size:13px; color: var(--text-muted);">ยอดบริจาคสะสมทั้งหมด</div>
+        <div style="font-size: 26px; font-weight: 900; color: #00ff87; margin-top: 4px;" id="profileDonated">0.00 THB</div>
+        
+        <div class="badge-indicator" id="profileBadge">NONE</div>
+      </div>
+
+      <div style="padding: 10px; background: rgba(0,242,254,0.08); border: 1px solid rgba(0,242,254,0.2); border-radius: 8px; font-size: 12.5px; text-align:center; color: #00f2fe; margin-bottom: 20px; line-height: 1.4;">
+        💡 <strong>คำแนะนำ:</strong> เมื่อคุณโดเนทผ่านหน้าระบบ ยศ VIP ของคุณจะถูกแสดงพ่วงกระดิ่งเด้งขึ้นบนจอโดยอัตโนมัติ!
+      </div>
+
+      <div style="display: flex; gap: 10px;">
+        <button onclick="goBackToStream()" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); flex: 1;">กลับหน้าโดเนท</button>
+        <button onclick="handleLogout()" style="background: rgba(255, 0, 127, 0.15); border: 1px solid rgba(255, 0, 127, 0.3); color: #ff3366; width: auto; padding: 0 20px;">ออกระบบ</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', checkSession);
+
+    function toggleForm(mode) {
+      document.getElementById('loginSection').style.display = mode === 'login' ? 'block' : 'none';
+      document.getElementById('registerSection').style.display = mode === 'register' ? 'block' : 'none';
+    }
+
+    async function checkSession() {
+      try {
+        const res = await fetch('/api/viewer/me');
+        const data = await res.json();
+        
+        if (data.loggedIn) {
+          document.getElementById('loginSection').style.display = 'none';
+          document.getElementById('registerSection').style.display = 'none';
+          document.getElementById('profileSection').style.display = 'block';
+
+          document.getElementById('profileName').innerText = data.viewer.displayName;
+          document.getElementById('profileDonated').innerText = data.viewer.totalDonated.toLocaleString('th-TH', { minimumFractionDigits: 2 }) + ' THB';
+          
+          const badgeEl = document.getElementById('profileBadge');
+          badgeEl.innerText = data.viewer.badgeTier === 'none' ? 'ปกติ (NO VIP)' : `VIP ${data.viewer.badgeTier}`;
+          badgeEl.className = `badge-indicator badge-${data.viewer.badgeTier}`;
+        } else {
+          document.getElementById('profileSection').style.display = 'none';
+          toggleForm('login');
+        }
+      } catch (err) {
+        console.error('Session check failed', err);
+      }
+    }
+
+    async function handleLogin(e) {
+      e.preventDefault();
+      const username = document.getElementById('loginUser').value;
+      const password = document.getElementById('loginPass').value;
+
+      try {
+        const response = await fetch('/api/viewer/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await response.json();
+        if (response.ok && data.success) {
+          checkSession();
+        } else {
+          alert(data.error || 'เข้าสู่ระบบล้มเหลว');
+        }
+      } catch (err) {
+        alert('เชื่อมต่อล้มเหลว');
+      }
+    }
+
+    async function handleRegister(e) {
+      e.preventDefault();
+      const username = document.getElementById('regUser').value;
+      const displayName = document.getElementById('regName').value;
+      const password = document.getElementById('regPass').value;
+
+      try {
+        const response = await fetch('/api/viewer/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, displayName, password })
+        });
+        const data = await response.json();
+        if (response.ok && data.success) {
+          alert('สร้างบัญชีและเข้าสู่ระบบสำเร็จ!');
+          checkSession();
+        } else {
+          alert(data.error || 'สมัครสมาชิกล้มเหลว');
+        }
+      } catch (err) {
+        alert('เชื่อมต่อล้มเหลว');
+      }
+    }
+
+    async function handleLogout() {
+      try {
+        await fetch('/api/viewer/logout', { method: 'POST' });
+        checkSession();
+      } catch (err) {}
+    }
+
+    function goBackToStream() {
+      // Go back to the previously visited streamer page (e.g. referer or default back)
+      if (document.referrer) {
+        window.location.href = document.referrer;
+      } else {
+        window.location.href = '/';
+      }
+    }
+
+    function goBackToStream() {
+      // Try referer or go home
+      const ref = document.referrer;
+      if (ref && ref.includes(window.location.origin)) {
+        window.location.href = ref;
+      } else {
+        window.location.href = '/';
+      }
+    }
+  </script>
+</body>
+</html>

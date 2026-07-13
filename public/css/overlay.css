@@ -200,3 +200,88 @@
     transform: translateY(0);
   }
 }
+
+/* VIP Badges */
+.badge-tag {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 3px 6px;
+  border-radius: 4px;
+  margin-left: 8px;
+  display: inline-block;
+  vertical-align: middle;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.badge-gold { background: #ffd700; color: #11071a; }
+.badge-silver { background: #e0e0e0; color: #11071a; }
+.badge-bronze { background: #cd7f32; color: #ffffff; }
+.badge-none { display: none; }
+
+/* Alert Theme Styles */
+
+/* 1. Gaming Theme (Cyberpunk Neon) */
+.donation-card-active.theme-gaming {
+  border: 2px solid #00f2fe !important;
+  background: rgba(5, 2, 15, 0.95) !important;
+  border-radius: 4px !important;
+  box-shadow: 0 0 20px #00f2fe4d, 0 10px 25px rgba(0,0,0,0.6) !important;
+}
+.theme-gaming .alert-title {
+  color: #ff007f !important;
+  letter-spacing: 3px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
+.theme-gaming .donor-name {
+  font-family: 'Courier New', monospace;
+  color: #00f2fe !important;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.theme-gaming .donor-amount {
+  font-family: 'Courier New', monospace;
+  color: #ff007f !important;
+  text-shadow: 0 0 10px rgba(255, 0, 127, 0.5) !important;
+}
+
+/* 2. Minimal Theme (Clean/Elegant) */
+.donation-card-active.theme-minimal {
+  border: 1px solid rgba(0,0,0,0.15) !important;
+  background: #ffffff !important;
+  border-radius: 8px !important;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.08) !important;
+  padding: 18px !important;
+}
+.theme-minimal .card-glow {
+  display: none !important;
+}
+.theme-minimal .badge-icon {
+  background: rgba(0,0,0,0.03) !important;
+  border-color: rgba(0,0,0,0.06) !important;
+}
+.theme-minimal .alert-title {
+  color: #888888 !important;
+  text-shadow: none !important;
+  font-size: 10px;
+}
+.theme-minimal .donor-name {
+  color: #222222 !important;
+  font-weight: 600;
+}
+.theme-minimal .donor-amount {
+  color: #111111 !important;
+  text-shadow: none !important;
+  font-size: 18px;
+}
+.theme-minimal .donor-message {
+  color: #555555 !important;
+  font-family: sans-serif;
+  font-weight: normal;
+}
+.theme-minimal .progress-bar-container {
+  height: 3px !important;
+}
+.theme-minimal .progress-bar {
+  background: #222222 !important;
+}

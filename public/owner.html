@@ -121,11 +121,41 @@
       </div>
     </div>
 
+    <!-- Payout Requests Management -->
+    <div class="glass-panel" style="width: 100%; margin-top: 30px;">
+      <h2>📥 คำขอถอนเงินจากสตรีมเมอร์ (Payout Requests)</h2>
+      <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 14px;">อนุมัติคำขอถอนเงิน หรือโอนเสร็จสิ้นแล้วให้กดอนุมัติเพื่อหักยอดสะสมจริง</p>
+      
+      <div class="table-container">
+        <table class="donation-table">
+          <thead>
+            <tr>
+              <th>วันเวลาที่ยื่น</th>
+              <th>ช่องสตรีมเมอร์</th>
+              <th>ยอดขอถอน</th>
+              <th>สุทธิที่จะได้รับ (หัก 2%)</th>
+              <th>รายละเอียดบัญชีรับเงิน</th>
+              <th>สถานะคำขอ</th>
+              <th>การดำเนินการ</th>
+            </tr>
+          </thead>
+          <tbody id="payoutRequestsTableBody">
+            <tr>
+              <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 40px;">
+                กำลังโหลดคำร้องขอถอนเงิน...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
 
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       fetchPlatformStats();
+      fetchPayouts();
     });
 
     async function fetchPlatformStats() {
@@ -192,6 +222,100 @@
         });
       } catch (err) {
         console.error('Error fetching platform stats:', err);
+      }
+    }
+
+    async function fetchPayouts() {
+      try {
+        const response = await fetch('/api/owner/payouts?t=' + Date.now());
+        if (!response.ok) return;
+
+        const payouts = await response.json();
+        const tbody = document.getElementById('payoutRequestsTableBody');
+        tbody.innerHTML = '';
+
+        if (payouts.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 40px;">
+                ยังไม่มีการยื่นคำขอถอนเงินใดๆ ในระบบ
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        payouts.forEach(p => {
+          const tr = document.createElement('tr');
+          const dateStr = new Date(p.createdAt).toLocaleDateString('th-TH', {
+            year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+          });
+
+          let statusBadge = '';
+          let actionButtons = '';
+
+          if (p.status === 'approved') {
+            statusBadge = '<span style="background: rgba(0,255,135,0.15); color: #00ff87; padding: 4px 10px; border-radius: 20px; font-size:12px; font-weight:700;">🟢 โอนเสร็จสิ้น</span>';
+            actionButtons = '<span style="color: var(--text-muted); font-size:13px;">-</span>';
+          } else if (p.status === 'declined') {
+            statusBadge = '<span style="background: rgba(255,0,127,0.15); color: #ff3366; padding: 4px 10px; border-radius: 20px; font-size:12px; font-weight:700;">🔴 ปฏิเสธคำขอ</span>';
+            actionButtons = '<span style="color: var(--text-muted); font-size:13px;">-</span>';
+          } else {
+            statusBadge = '<span style="background: rgba(255,170,0,0.15); color: #ffaa00; padding: 4px 10px; border-radius: 20px; font-size:12px; font-weight:700;">🟡 รอการโอน</span>';
+            actionButtons = `
+              <div style="display: flex; gap: 8px;">
+                <button onclick="processPayout('${p.id}', 'approve')" style="background: rgba(0, 255, 135, 0.15); border: 1px solid rgba(0, 255, 135, 0.3); color: #00ff87; padding: 5px 10px; font-size: 12px; cursor: pointer; border-radius: 5px; width:auto; text-transform:none; font-weight:normal;">โอนเงินแล้ว</button>
+                <button onclick="processPayout('${p.id}', 'decline')" style="background: rgba(255, 0, 127, 0.15); border: 1px solid rgba(255, 0, 127, 0.3); color: #ff3366; padding: 5px 10px; font-size: 12px; cursor: pointer; border-radius: 5px; width:auto; text-transform:none; font-weight:normal;">ปฏิเสธ</button>
+              </div>
+            `;
+          }
+
+          const detailsHtml = `
+            <strong>PromptPay:</strong> ${p.promptpayId || '-'}<br>
+            <strong>ชื่อบัญชี:</strong> ${p.accountName || '-'}<br>
+            ${p.bankName ? `<strong>ธนาคาร:</strong> ${p.bankName} (${p.accountNumber})` : ''}
+          `;
+
+          tr.innerHTML = `
+            <td style="color: var(--text-muted); font-size:13px;">${dateStr}</td>
+            <td style="font-weight:700; color: #00f2fe;">${p.streamerName} (@${p.username})</td>
+            <td style="font-weight:700;">${p.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ฿</td>
+            <td style="color:#00ff87; font-weight:700;">${p.netAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ฿</td>
+            <td style="font-size:12.5px; line-height:1.4; text-align:left;">${detailsHtml}</td>
+            <td>${statusBadge}</td>
+            <td>${actionButtons}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        console.error('Error fetching payouts:', err);
+      }
+    }
+
+    async function processPayout(payoutId, action) {
+      const confirmMsg = action === 'approve' 
+        ? '⚠️ ยืนยันว่าคุณโอนเงินตามข้อมูลธนาคาร/PromptPay เรียบร้อยแล้วเพื่ออนุมัติ?' 
+        : '⚠️ ปฏิเสธคำขอนี้ เงินที่หักไว้จะถูกตีคืนกลับกระเป๋าเงินสตรีมเมอร์ ยืนยันหรือไม่?';
+
+      if (!confirm(confirmMsg)) return;
+
+      try {
+        const response = await fetch('/api/owner/payout/process', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ payoutId, action })
+        });
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          alert('ดำเนินการบันทึกสถานะถอนเงินสำเร็จ');
+          fetchPayouts();
+        } else {
+          alert(data.error || 'ดำเนินการล้มเหลว');
+        }
+      } catch (err) {
+        console.error('Process payout failed:', err);
+        alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
       }
     }
 

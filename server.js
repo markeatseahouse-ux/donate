@@ -35,6 +35,9 @@ const SOUNDS_DIR = path.join(UPLOADS_DIR, 'sounds');
 const USERS_PATH = path.join(DATA_DIR, 'users.json');
 const CONFIGS_PATH = path.join(DATA_DIR, 'configs.json');
 const DONATIONS_PATH = path.join(DATA_DIR, 'donations.json');
+const WALLETS_PATH = path.join(DATA_DIR, 'wallets.json');
+const PAYOUTS_PATH = path.join(DATA_DIR, 'payouts.json');
+const VIEWERS_PATH = path.join(DATA_DIR, 'viewers.json');
 
 // Session setup
 app.use(cookieSession({
@@ -84,6 +87,33 @@ function saveDonations(donations) {
   fs.writeFileSync(DONATIONS_PATH, JSON.stringify(donations, null, 2));
 }
 
+function loadWallets() {
+  if (!fs.existsSync(WALLETS_PATH)) fs.writeFileSync(WALLETS_PATH, JSON.stringify([]));
+  return JSON.parse(fs.readFileSync(WALLETS_PATH, 'utf8') || '[]');
+}
+
+function saveWallets(wallets) {
+  fs.writeFileSync(WALLETS_PATH, JSON.stringify(wallets, null, 2));
+}
+
+function loadPayouts() {
+  if (!fs.existsSync(PAYOUTS_PATH)) fs.writeFileSync(PAYOUTS_PATH, JSON.stringify([]));
+  return JSON.parse(fs.readFileSync(PAYOUTS_PATH, 'utf8') || '[]');
+}
+
+function savePayouts(payouts) {
+  fs.writeFileSync(PAYOUTS_PATH, JSON.stringify(payouts, null, 2));
+}
+
+function loadViewers() {
+  if (!fs.existsSync(VIEWERS_PATH)) fs.writeFileSync(VIEWERS_PATH, JSON.stringify([]));
+  return JSON.parse(fs.readFileSync(VIEWERS_PATH, 'utf8') || '[]');
+}
+
+function saveViewers(viewers) {
+  fs.writeFileSync(VIEWERS_PATH, JSON.stringify(viewers, null, 2));
+}
+
 // Config Defaults Maker
 function makeDefaultConfig(userId) {
   return {
@@ -109,7 +139,11 @@ function makeDefaultConfig(userId) {
     goalTarget: 5000,
     goalCurrent: 0,
     viewerAccentColor: '#8a2be2',
-    viewerBannerFile: ''
+    viewerBannerFile: '',
+    alertTheme: 'classic',
+    paymentMode: 'direct',
+    wheelMinAmount: 50,
+    wheelItems: '["รางวัลที่ 1","ยินดีด้วย","โชคดีครั้งหน้า","สู้ๆ","แจกสติกเกอร์"]'
   };
 }
 
@@ -174,6 +208,16 @@ async function initDbSchema() {
         viewer_banner_file VARCHAR(255)
       )
     `);
+
+    // Alter configs table to add new columns if they do not exist
+    try {
+      await client.query("ALTER TABLE configs ADD COLUMN IF NOT EXISTS alert_theme VARCHAR(50) DEFAULT 'classic'");
+      await client.query("ALTER TABLE configs ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(20) DEFAULT 'direct'");
+      await client.query("ALTER TABLE configs ADD COLUMN IF NOT EXISTS wheel_min_amount NUMERIC DEFAULT 50");
+      await client.query("ALTER TABLE configs ADD COLUMN IF NOT EXISTS wheel_items TEXT DEFAULT '[\"รางวัลที่ 1\",\"ยินดีด้วย\",\"โชคดีครั้งหน้า\",\"สู้ๆ\",\"แจกสติกเกอร์\"]'");
+    } catch (colErr) {
+      console.log('[Database Migration] Column alterations warning/skipped:', colErr.message);
+    }
     
     // Create Donations Schema
     await client.query(`
@@ -196,9 +240,58 @@ async function initDbSchema() {
         rejected_at TIMESTAMP WITH TIME ZONE
       )
     `);
+
+    // Add viewer_id to donations for loyalty reference
+    try {
+      await client.query("ALTER TABLE donations ADD COLUMN IF NOT EXISTS viewer_id VARCHAR(50)");
+      await client.query("ALTER TABLE donations ADD COLUMN IF NOT EXISTS wheel_prize VARCHAR(255)");
+    } catch (dColErr) {
+      console.log('[Database Migration] Donation alterations warning/skipped:', dColErr.message);
+    }
+
+    // Create Wallets Schema
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS wallets (
+        user_id VARCHAR(50) PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        balance NUMERIC DEFAULT 0,
+        payout_rate NUMERIC DEFAULT 2.0,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create Payouts Schema
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS payouts (
+        id VARCHAR(50) PRIMARY KEY,
+        user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+        amount NUMERIC NOT NULL,
+        fee_amount NUMERIC NOT NULL,
+        net_amount NUMERIC NOT NULL,
+        promptpay_id VARCHAR(50) NOT NULL,
+        bank_name VARCHAR(100),
+        account_number VARCHAR(100),
+        account_name VARCHAR(255),
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        processed_at TIMESTAMP WITH TIME ZONE
+      )
+    `);
+
+    // Create Viewers Schema (For donor loyalty accounts)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS viewers (
+        id VARCHAR(50) PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        display_name VARCHAR(100) NOT NULL,
+        total_donated NUMERIC DEFAULT 0,
+        badge_tier VARCHAR(20) DEFAULT 'none',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
     
     client.release();
-    console.log('[Database] PostgreSQL schemas initialized successfully.');
+    console.log('[Database] PostgreSQL schemas and SaaS tables initialized successfully.');
     
     // Auto-migrate local JSON file database into PostgreSQL if empty
     await migrateJsonToPostgres();
@@ -295,7 +388,11 @@ function mapConfigFromDb(row) {
     goalTarget: Number(row.goal_target),
     goalCurrent: Number(row.goal_current),
     viewerAccentColor: row.viewer_accent_color,
-    viewerBannerFile: row.viewer_banner_file
+    viewerBannerFile: row.viewer_banner_file,
+    alertTheme: row.alert_theme || 'classic',
+    paymentMode: row.payment_mode || 'direct',
+    wheelMinAmount: Number(row.wheel_min_amount || 50),
+    wheelItems: row.wheel_items || '["รางวัลที่ 1","ยินดีด้วย","โชคดีครั้งหน้า","สู้ๆ","แจกสติกเกอร์"]'
   };
 }
 
@@ -317,7 +414,9 @@ function mapDonationFromDb(r) {
     createdAt: r.created_at,
     paidAt: r.paid_at,
     approvedAt: r.approved_at,
-    rejectedAt: r.rejected_at
+    rejectedAt: r.rejected_at,
+    viewerId: r.viewer_id,
+    wheelPrize: r.wheel_prize
   };
 }
 
@@ -364,9 +463,10 @@ async function dbSaveConfig(c) {
         user_id, promptpay_id, verify_mode, easyslip_api_key, streamer_name, streamer_description,
         banned_words, require_approval, min_amount_tts, min_donate_amount, tts_speed, tts_pitch,
         sound_volume, overlay_accent_color, overlay_text_color, alert_animation, alert_sound_file,
-        goal_enabled, goal_title, goal_target, goal_current, viewer_accent_color, viewer_banner_file
+        goal_enabled, goal_title, goal_target, goal_current, viewer_accent_color, viewer_banner_file,
+        alert_theme, payment_mode, wheel_min_amount, wheel_items
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
       ) ON CONFLICT (user_id) DO UPDATE SET
         promptpay_id = EXCLUDED.promptpay_id,
         verify_mode = EXCLUDED.verify_mode,
@@ -389,12 +489,17 @@ async function dbSaveConfig(c) {
         goal_target = EXCLUDED.goal_target,
         goal_current = EXCLUDED.goal_current,
         viewer_accent_color = EXCLUDED.viewer_accent_color,
-        viewer_banner_file = EXCLUDED.viewer_banner_file
+        viewer_banner_file = EXCLUDED.viewer_banner_file,
+        alert_theme = EXCLUDED.alert_theme,
+        payment_mode = EXCLUDED.payment_mode,
+        wheel_min_amount = EXCLUDED.wheel_min_amount,
+        wheel_items = EXCLUDED.wheel_items
     `, [
       c.userId, c.promptpayId, c.verifyMode, c.easyslipApiKey, c.streamerName, c.streamerDescription,
       c.bannedWords, c.requireApproval, c.minAmountTts, c.minDonateAmount, c.ttsSpeed, c.ttsPitch,
       c.soundVolume, c.overlayAccentColor, c.overlayTextColor, c.alertAnimation, c.alertSoundFile,
-      c.goalEnabled, c.goalTitle, c.goalTarget, c.goalCurrent, c.viewerAccentColor, c.viewerBannerFile
+      c.goalEnabled, c.goalTitle, c.goalTarget, c.goalCurrent, c.viewerAccentColor, c.viewerBannerFile,
+      c.alertTheme || 'classic', c.paymentMode || 'direct', c.wheelMinAmount || 50, c.wheelItems || '[]'
     ]);
     return;
   }
@@ -421,9 +526,10 @@ async function dbSaveDonation(d) {
     await pool.query(`
       INSERT INTO donations (
         id, user_id, name, message, amount, status, qr_payload, slip_qr_data, trans_ref,
-        sender_name, verification_method, is_simulation, created_at, paid_at, approved_at, rejected_at
+        sender_name, verification_method, is_simulation, created_at, paid_at, approved_at, rejected_at,
+        viewer_id, wheel_prize
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
       ) ON CONFLICT (id) DO UPDATE SET
         status = EXCLUDED.status,
         slip_qr_data = EXCLUDED.slip_qr_data,
@@ -433,10 +539,13 @@ async function dbSaveDonation(d) {
         is_simulation = EXCLUDED.is_simulation,
         paid_at = EXCLUDED.paid_at,
         approved_at = EXCLUDED.approved_at,
-        rejected_at = EXCLUDED.rejected_at
+        rejected_at = EXCLUDED.rejected_at,
+        viewer_id = EXCLUDED.viewer_id,
+        wheel_prize = EXCLUDED.wheel_prize
     `, [
       d.id, d.userId, d.name, d.message, d.amount, d.status, d.qrPayload, d.slipQrData, d.transRef,
-      d.senderName, d.verificationMethod, d.isSimulation || false, d.createdAt, d.paidAt, d.approvedAt, d.rejectedAt
+      d.senderName, d.verificationMethod, d.isSimulation || false, d.createdAt, d.paidAt, d.approvedAt, d.rejectedAt,
+      d.viewerId || null, d.wheelPrize || null
     ]);
     return;
   }
@@ -448,6 +557,142 @@ async function dbSaveDonation(d) {
     donations.push(d);
   }
   saveDonations(donations);
+}
+
+// WALLETS DATA ACCESORS
+async function dbGetWallets() {
+  if (useDb) {
+    const res = await pool.query('SELECT * FROM wallets');
+    return res.rows.map(r => ({
+      userId: r.user_id,
+      balance: Number(r.balance),
+      payoutRate: Number(r.payout_rate),
+      updatedAt: r.updated_at
+    }));
+  }
+  return loadWallets();
+}
+
+async function dbSaveWallet(w) {
+  if (useDb) {
+    await pool.query(`
+      INSERT INTO wallets (user_id, balance, payout_rate, updated_at)
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+      ON CONFLICT (user_id) DO UPDATE SET
+        balance = EXCLUDED.balance,
+        payout_rate = EXCLUDED.payout_rate,
+        updated_at = CURRENT_TIMESTAMP
+    `, [w.userId, w.balance, w.payoutRate || 2.0]);
+    return;
+  }
+  const wallets = loadWallets();
+  const idx = wallets.findIndex(item => item.userId === w.userId);
+  if (idx !== -1) {
+    wallets[idx] = w;
+  } else {
+    wallets.push(w);
+  }
+  saveWallets(wallets);
+}
+
+// PAYOUTS DATA ACCESORS
+async function dbGetPayouts() {
+  if (useDb) {
+    const res = await pool.query('SELECT * FROM payouts');
+    return res.rows.map(r => ({
+      id: r.id,
+      userId: r.user_id,
+      amount: Number(r.amount),
+      feeAmount: Number(r.fee_amount),
+      netAmount: Number(r.net_amount),
+      promptpayId: r.promptpay_id,
+      bankName: r.bank_name,
+      accountNumber: r.account_number,
+      accountName: r.account_name,
+      status: r.status,
+      createdAt: r.created_at,
+      processedAt: r.processed_at
+    }));
+  }
+  return loadPayouts();
+}
+
+async function dbSavePayout(p) {
+  if (useDb) {
+    await pool.query(`
+      INSERT INTO payouts (
+        id, user_id, amount, fee_amount, net_amount, promptpay_id, bank_name,
+        account_number, account_name, status, created_at, processed_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      ON CONFLICT (id) DO UPDATE SET
+        status = EXCLUDED.status,
+        processed_at = EXCLUDED.processed_at
+    `, [
+      p.id, p.userId, p.amount, p.feeAmount, p.netAmount, p.promptpayId, p.bankName,
+      p.accountNumber, p.accountName, p.status, p.createdAt, p.processedAt
+    ]);
+    return;
+  }
+  const payouts = loadPayouts();
+  const idx = payouts.findIndex(item => item.id === p.id);
+  if (idx !== -1) {
+    payouts[idx] = p;
+  } else {
+    payouts.push(p);
+  }
+  savePayouts(payouts);
+}
+
+// VIEWERS (LOYALTY SYSTEM) DATA ACCESORS
+async function dbGetViewers() {
+  if (useDb) {
+    const res = await pool.query('SELECT * FROM viewers');
+    return res.rows.map(r => ({
+      id: r.id,
+      username: r.username,
+      passwordHash: r.password_hash,
+      displayName: r.display_name,
+      totalDonated: Number(r.total_donated),
+      badgeTier: r.badge_tier,
+      createdAt: r.created_at
+    }));
+  }
+  return loadViewers();
+}
+
+async function dbAddViewer(v) {
+  if (useDb) {
+    await pool.query(`
+      INSERT INTO viewers (id, username, password_hash, display_name, total_donated, badge_tier, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `, [v.id, v.username, v.passwordHash, v.displayName, v.totalDonated || 0, v.badgeTier || 'none', v.createdAt]);
+    return;
+  }
+  const viewers = loadViewers();
+  viewers.push(v);
+  saveViewers(viewers);
+}
+
+async function dbSaveViewer(v) {
+  if (useDb) {
+    await pool.query(`
+      INSERT INTO viewers (id, username, password_hash, display_name, total_donated, badge_tier, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (id) DO UPDATE SET
+        display_name = EXCLUDED.display_name,
+        total_donated = EXCLUDED.total_donated,
+        badge_tier = EXCLUDED.badge_tier
+    `, [v.id, v.username, v.passwordHash, v.displayName, v.totalDonated, v.badgeTier, v.createdAt]);
+    return;
+  }
+  const viewers = loadViewers();
+  const idx = viewers.findIndex(item => item.id === v.id);
+  if (idx !== -1) {
+    viewers[idx] = v;
+  } else {
+    viewers.push(v);
+  }
+  saveViewers(viewers);
 }
 
 // Automatic Legacy migration on Server Boot
@@ -614,6 +859,71 @@ function parseNotificationText(title, text) {
 async function completePayment(donation, config, username) {
   donation.status = config.requireApproval ? 'pending_approval' : 'paid';
   donation.paidAt = new Date().toISOString();
+
+  // 1. Process Platform Fee and Wallet Balance (if in platform mode and not simulation)
+  if (config.paymentMode === 'platform' && !donation.isSimulation) {
+    try {
+      const wallets = await dbGetWallets();
+      let wallet = wallets.find(w => w.userId === donation.userId);
+      if (!wallet) {
+        wallet = { userId: donation.userId, balance: 0, payoutRate: 2.0 };
+      }
+      const feePercent = wallet.payoutRate || 2.0;
+      const feeAmount = donation.amount * (feePercent / 100.0);
+      const netAmount = donation.amount - feeAmount;
+      
+      wallet.balance = (wallet.balance || 0) + netAmount;
+      await dbSaveWallet(wallet);
+      console.log(`[Wallet] Credited ${netAmount} THB (Fee: ${feeAmount} THB) to ${username}'s platform wallet.`);
+    } catch (err) {
+      console.error('[Wallet] Error crediting balance:', err.message);
+    }
+  }
+
+  // 2. Process Viewer Loyalty / VIP badges
+  let viewerBadge = 'none';
+  if (donation.viewerId) {
+    try {
+      const viewers = await dbGetViewers();
+      const viewer = viewers.find(v => v.id === donation.viewerId);
+      if (viewer) {
+        viewer.totalDonated = (viewer.totalDonated || 0) + donation.amount;
+        
+        // Calculate new tier
+        if (viewer.totalDonated >= 5000) {
+          viewer.badgeTier = 'gold';
+        } else if (viewer.totalDonated >= 1000) {
+          viewer.badgeTier = 'silver';
+        } else if (viewer.totalDonated >= 300) {
+          viewer.badgeTier = 'bronze';
+        } else {
+          viewer.badgeTier = 'none';
+        }
+        
+        await dbSaveViewer(viewer);
+        viewerBadge = viewer.badgeTier;
+        console.log(`[Loyalty] Updated viewer ${viewer.displayName} total donated to ${viewer.totalDonated} THB (Tier: ${viewerBadge})`);
+      }
+    } catch (err) {
+      console.error('[Loyalty] Error updating viewer loyalty info:', err.message);
+    }
+  }
+
+  // 3. Roll Wheel of Fortune prize if threshold met
+  let wheelPrize = null;
+  if (!donation.isSimulation && config.wheelItems && donation.amount >= (config.wheelMinAmount || 50)) {
+    try {
+      const items = JSON.parse(config.wheelItems);
+      if (Array.isArray(items) && items.length > 0) {
+        const randomIndex = Math.floor(Math.random() * items.length);
+        wheelPrize = items[randomIndex];
+        donation.wheelPrize = wheelPrize;
+        console.log(`[Wheel] Rolled prize: "${wheelPrize}" for ${donation.amount} THB donation.`);
+      }
+    } catch (err) {
+      console.error('[Wheel] Error parsing items/rolling prize:', err.message);
+    }
+  }
   
   // Increment Goal progress if enabled AND NOT a simulation
   if (config.goalEnabled && !donation.isSimulation) {
@@ -640,7 +950,9 @@ async function completePayment(donation, config, username) {
       senderRealName: donation.senderName || donation.name,
       message: donation.message,
       amount: donation.amount,
-      timestamp: donation.paidAt
+      timestamp: donation.paidAt,
+      viewerBadge,
+      wheelPrize
     });
   }
 }
@@ -751,6 +1063,93 @@ app.get('/api/auth/me', async (req, res) => {
     return res.status(401).json({ error: 'User not found' });
   }
   res.json({ user: { id: user.id, username: user.username, role: user.role } });
+});
+
+// --- VIEWER (DONATOR) AUTHENTICATION ENDPOINTS ---
+
+app.post('/api/viewer/register', async (req, res) => {
+  const { username, password, displayName } = req.body;
+  if (!username || !password || !displayName) {
+    return res.status(400).json({ error: 'กรุณากรอกข้อมูลให้ครบถ้วน' });
+  }
+
+  const cleanUsername = username.trim().toLowerCase();
+  const cleanDisplayName = displayName.trim();
+
+  if (cleanUsername.length < 3 || !/^[a-zA-Z0-9_\-]+$/.test(cleanUsername)) {
+    return res.status(400).json({ error: 'Username ต้องเป็นภาษาอังกฤษ ตัวเลข หรือเครื่องหมาย _ และ - เท่านั้น' });
+  }
+
+  const viewers = await dbGetViewers();
+  if (viewers.find(v => v.username.toLowerCase() === cleanUsername)) {
+    return res.status(400).json({ error: 'ชื่อผู้ใช้งานนี้ถูกสมัครไปแล้ว' });
+  }
+
+  const viewerId = 'viw_' + Date.now();
+  const salt = bcrypt.genSaltSync(10);
+  const passwordHash = bcrypt.hashSync(password, salt);
+
+  const newViewer = {
+    id: viewerId,
+    username: cleanUsername,
+    passwordHash,
+    displayName: cleanDisplayName,
+    totalDonated: 0,
+    badgeTier: 'none',
+    createdAt: new Date().toISOString()
+  };
+
+  await dbAddViewer(newViewer);
+  req.session.viewerId = viewerId;
+
+  res.json({ success: true, viewer: { id: viewerId, displayName: cleanDisplayName } });
+});
+
+app.post('/api/viewer/login', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'กรุณากรอกข้อมูลให้ครบถ้วน' });
+  }
+
+  const cleanUsername = username.trim().toLowerCase();
+  const viewers = await dbGetViewers();
+  const viewer = viewers.find(v => v.username.toLowerCase() === cleanUsername);
+
+  if (!viewer || !bcrypt.compareSync(password, viewer.passwordHash)) {
+    return res.status(401).json({ error: 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง' });
+  }
+
+  req.session.viewerId = viewer.id;
+  res.json({ success: true, viewer: { id: viewer.id, displayName: viewer.displayName } });
+});
+
+app.post('/api/viewer/logout', (req, res) => {
+  req.session.viewerId = null;
+  res.json({ success: true });
+});
+
+app.get('/api/viewer/me', async (req, res) => {
+  if (!req.session.viewerId) {
+    return res.json({ loggedIn: false });
+  }
+
+  const viewers = await dbGetViewers();
+  const viewer = viewers.find(v => v.id === req.session.viewerId);
+  if (!viewer) {
+    req.session.viewerId = null;
+    return res.json({ loggedIn: false });
+  }
+
+  res.json({
+    loggedIn: true,
+    viewer: {
+      id: viewer.id,
+      username: viewer.username,
+      displayName: viewer.displayName,
+      totalDonated: viewer.totalDonated,
+      badgeTier: viewer.badgeTier
+    }
+  });
 });
 
 // --- SCAPED CONFIG & ASSET APIS ---
@@ -1400,19 +1799,268 @@ app.post('/api/owner/delete-streamer', async (req, res) => {
   res.json({ success: true, message: 'ลบบัญชีสตรีมเมอร์สำเร็จ' });
 });
 
+// --- WALLET & PAYOUT SAAS APIS ---
+
+app.get('/api/streamer/wallet', async (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const wallets = await dbGetWallets();
+    let wallet = wallets.find(w => w.userId === req.session.userId);
+    if (!wallet) {
+      wallet = { userId: req.session.userId, balance: 0.0, payoutRate: 2.0 };
+      await dbSaveWallet(wallet);
+    }
+
+    const allPayouts = await dbGetPayouts();
+    const streamerPayouts = allPayouts
+      .filter(p => p.userId === req.session.userId)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json({
+      balance: wallet.balance,
+      payoutRate: wallet.payoutRate,
+      payouts: streamerPayouts
+    });
+  } catch (err) {
+    console.error('Error fetching wallet:', err.message);
+    res.status(500).json({ error: 'Failed to fetch wallet info' });
+  }
+});
+
+app.post('/api/streamer/payout/request', async (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { amount, promptpayId, bankName, accountNumber, accountName } = req.body;
+  const withdrawAmount = parseFloat(amount);
+
+  if (isNaN(withdrawAmount) || withdrawAmount <= 0) {
+    return res.status(400).json({ error: 'จำนวนเงินถอนไม่ถูกต้อง' });
+  }
+
+  try {
+    const wallets = await dbGetWallets();
+    const wallet = wallets.find(w => w.userId === req.session.userId);
+
+    if (!wallet || wallet.balance < withdrawAmount) {
+      return res.status(400).json({ error: 'ยอดเงินคงเหลือไม่เพียงพอสำหรับการถอน' });
+    }
+
+    const feePercent = wallet.payoutRate || 2.0;
+    const feeAmount = withdrawAmount * (feePercent / 100.0);
+    const netAmount = withdrawAmount - feeAmount;
+
+    // Deduct from balance
+    wallet.balance -= withdrawAmount;
+    await dbSaveWallet(wallet);
+
+    // Save payout request
+    const payoutId = 'pay_' + Date.now();
+    const newPayout = {
+      id: payoutId,
+      userId: req.session.userId,
+      amount: withdrawAmount,
+      feeAmount,
+      netAmount,
+      promptpayId: promptpayId || '',
+      bankName: bankName || '',
+      accountNumber: accountNumber || '',
+      accountName: accountName || '',
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+
+    await dbSavePayout(newPayout);
+    res.json({ success: true, payout: newPayout });
+  } catch (err) {
+    console.error('Error requesting payout:', err.message);
+    res.status(500).json({ error: 'Failed to request payout' });
+  }
+});
+
+app.get('/api/owner/payouts', async (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const users = await dbGetUsers();
+  const user = users.find(u => u.id === req.session.userId);
+  if (!user || user.role !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  try {
+    const allPayouts = await dbGetPayouts();
+    const configs = await dbGetConfigs();
+    
+    // Attach streamer usernames to payouts for the admin dashboard list
+    const enrichedPayouts = allPayouts.map(p => {
+      const streamer = users.find(u => u.id === p.userId) || {};
+      const streamerConfig = configs.find(c => c.userId === p.userId) || {};
+      return {
+        ...p,
+        username: streamer.username || 'unknown',
+        streamerName: streamerConfig.streamerName || 'Unknown Streamer'
+      };
+    }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json(enrichedPayouts);
+  } catch (err) {
+    console.error('Error fetching owner payouts:', err.message);
+    res.status(500).json({ error: 'Failed to fetch payouts' });
+  }
+});
+
+app.post('/api/owner/payout/process', async (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const users = await dbGetUsers();
+  const user = users.find(u => u.id === req.session.userId);
+  if (!user || user.role !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const { payoutId, action } = req.body;
+  if (!payoutId || !['approve', 'decline'].includes(action)) {
+    return res.status(400).json({ error: 'Invalid payoutId or action' });
+  }
+
+  try {
+    const payouts = await dbGetPayouts();
+    const payout = payouts.find(p => p.id === payoutId);
+    if (!payout) return res.status(404).json({ error: 'Payout not found' });
+    if (payout.status !== 'pending') return res.status(400).json({ error: 'Payout already processed' });
+
+    if (action === 'approve') {
+      payout.status = 'approved';
+      payout.processedAt = new Date().toISOString();
+      await dbSavePayout(payout);
+    } else {
+      payout.status = 'declined';
+      payout.processedAt = new Date().toISOString();
+      await dbSavePayout(payout);
+
+      // Refund streamer balance
+      const wallets = await dbGetWallets();
+      const wallet = wallets.find(w => w.userId === payout.userId);
+      if (wallet) {
+        wallet.balance = (wallet.balance || 0) + payout.amount;
+        await dbSaveWallet(wallet);
+      }
+    }
+
+    res.json({ success: true, payout });
+  } catch (err) {
+    console.error('Error processing payout:', err.message);
+    res.status(500).json({ error: 'Failed to process payout' });
+  }
+});
+
+// --- HISTORICAL STATS API ---
+
+app.get('/api/stats/history', async (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const allDonations = await dbGetDonations();
+    const streamerDonations = allDonations.filter(
+      d => d.userId === req.session.userId && d.status === 'paid' && !d.isSimulation
+    );
+
+    // Calculate sum of amount grouped by day for the last 7 days
+    const dailyStats = [];
+    const now = new Date();
+    
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(now);
+      date.setDate(now.getDate() - i);
+      const dayStr = date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+      const dayKey = date.toDateString();
+
+      const dailyAmount = streamerDonations
+        .filter(d => new Date(d.paidAt || d.createdAt).toDateString() === dayKey)
+        .reduce((sum, d) => sum + d.amount, 0);
+
+      dailyStats.push({
+        date: dayStr,
+        amount: dailyAmount
+      });
+    }
+
+    res.json(dailyStats);
+  } catch (err) {
+    console.error('Error fetching stats history:', err.message);
+    res.status(500).json({ error: 'Failed to fetch history stats' });
+  }
+});
+
+// --- PUBLIC LEADERBOARD API ---
+
+app.get('/api/leaderboard', async (req, res) => {
+  const { username } = req.query;
+  if (!username) return res.status(400).json({ error: 'Username is required' });
+
+  try {
+    const users = await dbGetUsers();
+    const user = users.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
+    if (!user) return res.status(404).json({ error: 'Streamer not found' });
+
+    const donations = await dbGetDonations();
+    const paidDonations = donations.filter(
+      d => d.userId === user.id && d.status === 'paid' && !d.isSimulation
+    );
+
+    const donorMap = {};
+    paidDonations.forEach(d => {
+      const key = d.name.trim();
+      donorMap[key] = (donorMap[key] || 0) + d.amount;
+    });
+
+    const topDonators = Object.keys(donorMap)
+      .map(name => ({ name, amount: donorMap[name] }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 5);
+
+    res.json(topDonators);
+  } catch (err) {
+    console.error('Error fetching public leaderboard:', err.message);
+    res.status(500).json({ error: 'Failed to fetch leaderboard' });
+  }
+});
+
 // --- Dynamic Streamer URL catch-all routes ---
 
 app.get('/:username', async (req, res, next) => {
   const cleanName = req.params.username.split('.')[0];
-  if (['api', 'css', 'js', 'uploads', 'login.html', 'admin.html', 'overlay.html', 'goal.html', 'index.html', 'favicon'].includes(cleanName)) {
+  if (['api', 'css', 'js', 'uploads', 'login.html', 'admin.html', 'overlay.html', 'goal.html', 'leaderboard.html', 'wheel.html', 'streamer.html', 'index.html', 'favicon'].includes(cleanName)) {
     return next();
   }
   const users = await dbGetUsers();
   const user = users.find(u => u.username.toLowerCase() === cleanName.toLowerCase());
   if (user) {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(__dirname, 'public', 'streamer.html'));
   } else {
     res.status(404).send('ไม่พบช่องสตรีมเมอร์นี้ในระบบ');
+  }
+});
+
+app.get('/:username/leaderboard', async (req, res) => {
+  const cleanName = req.params.username.toLowerCase();
+  const users = await dbGetUsers();
+  const user = users.find(u => u.username.toLowerCase() === cleanName);
+  if (user) {
+    res.sendFile(path.join(__dirname, 'public', 'leaderboard.html'));
+  } else {
+    res.status(404).send('ไม่พบห้องตารางผู้นำสำหรับสตรีมเมอร์นี้');
+  }
+});
+
+app.get('/:username/wheel', async (req, res) => {
+  const cleanName = req.params.username.toLowerCase();
+  const users = await dbGetUsers();
+  const user = users.find(u => u.username.toLowerCase() === cleanName);
+  if (user) {
+    res.sendFile(path.join(__dirname, 'public', 'wheel.html'));
+  } else {
+    res.status(404).send('ไม่พบห้องวงล้อสุ่มกิจกรรมสำหรับสตรีมเมอร์นี้');
   }
 });
 

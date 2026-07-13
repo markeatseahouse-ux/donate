@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wheel of Fortune Widget</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <style>
+    body {
+      background: transparent !important;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: 'Inter', sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .wheel-container {
+      position: relative;
+      width: 450px;
+      height: 450px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: rgba(16, 12, 36, 0.85);
+      border: 3px solid rgba(0, 242, 254, 0.2);
+      border-radius: 50%;
+      box-shadow: 0 0 30px rgba(0, 242, 254, 0.2), inset 0 0 30px rgba(0, 0, 0, 0.8);
+      opacity: 0;
+      transform: scale(0.8);
+      transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .wheel-container.visible {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    #wheelCanvas {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+    }
+
+    /* Pointer indicator */
+    .wheel-pointer {
+      position: absolute;
+      top: -15px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+      border-left: 20px solid transparent;
+      border-right: 20px solid transparent;
+      border-top: 35px solid #ff007f;
+      z-index: 10;
+      filter: drop-shadow(0 4px 10px rgba(255, 0, 127, 0.6));
+    }
+
+    /* Inner Center hub */
+    .wheel-center-hub {
+      position: absolute;
+      width: 70px;
+      height: 70px;
+      background: linear-gradient(135deg, #00f2fe, #ff007f);
+      border-radius: 50%;
+      border: 4px solid #fff;
+      z-index: 5;
+      box-shadow: 0 0 15px rgba(255, 255, 255, 0.6);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-weight: 900;
+      color: #fff;
+      font-size: 14px;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.4);
+    }
+
+    /* Winner Display overlay card */
+    .win-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.6);
+      background: rgba(11, 7, 26, 0.95);
+      border: 2px solid #00ff87;
+      box-shadow: 0 0 30px rgba(0, 255, 135, 0.4);
+      border-radius: 16px;
+      padding: 24px 40px;
+      text-align: center;
+      z-index: 20;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .win-overlay.active {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    .win-title {
+      font-size: 13.5px;
+      font-weight: 800;
+      color: #00ff87;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .win-prize {
+      font-size: 26px;
+      font-weight: 900;
+      color: #fff;
+      text-shadow: 0 0 10px rgba(255,255,255,0.2);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="wheel-container" id="wheelContainer">
+    <div class="wheel-pointer"></div>
+    <canvas id="wheelCanvas" width="500" height="500"></canvas>
+    <div class="wheel-center-hub">SPIN</div>
+    
+    <div class="win-overlay" id="winOverlay">
+      <div class="win-title">🎉 สุ่มได้รางวัล (Rolled Prize) 🎉</div>
+      <div class="win-prize" id="winPrizeText">-</div>
+    </div>
+  </div>
+
+  <script>
+    let socket;
+    let config = {};
+    let wheelItems = ["รางวัลที่ 1", "ยินดีด้วย", "โชคดีครั้งหน้า", "สู้ๆ นะ", "แจกสติกเกอร์"];
+    
+    const canvas = document.getElementById('wheelCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    let startAngle = 0;
+    let spinAngleStart = 10;
+    let spinTime = 0;
+    let spinTimeTotal = 0;
+    let isSpinning = false;
+    let targetPrize = null;
+
+    const colors = [
+      "#ff007f", "#8a2be2", "#00f2fe", "#ffaa00", 
+      "#00ff87", "#e91e63", "#3f51b5", "#009688"
+    ];
+
+    function getTargetUsername() {
+      const pathParts = window.location.pathname.split('/').filter(p => p.length > 0);
+      return (pathParts[0] || 'admin').toLowerCase();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initSocket();
+      fetchConfig();
+    });
+
+    function initSocket() {
+      socket = io();
+      socket.on('connect', () => {
+        socket.emit('join-room', getTargetUsername());
+      });
+
+      socket.on('donation-alert', (data) => {
+        console.log('[Wheel] Received event:', data);
+        if (data.wheelPrize) {
+          // Add small delay to let alert sound/intro play first
+          setTimeout(() => {
+            triggerWheelSpin(data.wheelPrize);
+          }, 2500);
+        }
+      });
+    }
+
+    async function fetchConfig() {
+      try {
+        const username = getTargetUsername();
+        const response = await fetch(`/api/config?username=${username}`);
+        if (!response.ok) return;
+
+        config = await response.json();
+        
+        if (config.wheelItems) {
+          try {
+            const arr = JSON.parse(config.wheelItems);
+            if (Array.isArray(arr) && arr.length > 0) {
+              wheelItems = arr;
+            }
+          } catch(e) {}
+        }
+        
+        drawWheel();
+      } catch (err) {
+        console.error('Error loading config:', err);
+      }
+    }
+
+    function drawWheel() {
+      const numSegments = wheelItems.length;
+      const arc = Math.PI * 2 / numSegments;
+      const radius = 240;
+
+      ctx.clearRect(0, 0, 500, 500);
+
+      // Outer gold circle
+      ctx.strokeStyle = "rgba(255,255,255,0.15)";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(250, 250, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      for (let i = 0; i < numSegments; i++) {
+        const angle = startAngle + i * arc;
+        ctx.fillStyle = colors[i % colors.length];
+
+        ctx.beginPath();
+        ctx.arc(250, 250, radius - 2, angle, angle + arc, false);
+        ctx.lineTo(250, 250);
+        ctx.fill();
+
+        ctx.save();
+        ctx.fillStyle = "#fff";
+        ctx.translate(250 + Math.cos(angle + arc / 2) * (radius/1.5), 250 + Math.sin(angle + arc / 2) * (radius/1.5));
+        ctx.rotate(angle + arc / 2 + Math.PI / 2);
+        
+        ctx.font = 'bold 14px "Inter", sans-serif';
+        const text = wheelItems[i];
+        ctx.fillText(text, -ctx.measureText(text).width / 2, 0);
+        ctx.restore();
+      }
+    }
+
+    function triggerWheelSpin(prize) {
+      if (isSpinning) return;
+      
+      targetPrize = prize;
+      isSpinning = true;
+      
+      // Make wheel container visible
+      const container = document.getElementById('wheelContainer');
+      container.classList.add('visible');
+      
+      // Ensure target prize exists in local segment items
+      let targetIndex = wheelItems.indexOf(prize);
+      if (targetIndex === -1) {
+        // Fallback: insert it dynamically
+        wheelItems.push(prize);
+        drawWheel();
+        targetIndex = wheelItems.length - 1;
+      }
+
+      // Calculate spin parameters
+      const numSegments = wheelItems.length;
+      const arc = Math.PI * 2 / numSegments;
+      
+      // Pointer is at top (-90 degrees / -Math.PI / 2)
+      // We want segment targetIndex to stop under pointer
+      const targetAngle = (Math.PI * 2) - (targetIndex * arc) - (arc / 2) - (Math.PI / 2);
+      
+      // Add multiple rotations (5-7 full spins)
+      const totalSpinAngle = targetAngle + (Math.PI * 2 * 6);
+      
+      spinAngleStart = totalSpinAngle;
+      spinTime = 0;
+      spinTimeTotal = 4000; // 4 seconds spin duration
+      
+      animateSpin();
+    }
+
+    function animateSpin() {
+      spinTime += 16; // ~60fps
+      if (spinTime >= spinTimeTotal) {
+        stopRotate();
+        return;
+      }
+
+      // Ease out animation
+      const t = spinTime / spinTimeTotal;
+      const easeOut = 1 - Math.pow(1 - t, 3); // Cubic ease out
+      const currentAngle = easeOut * spinAngleStart;
+      
+      startAngle = currentAngle;
+      drawWheel();
+      
+      requestAnimationFrame(animateSpin);
+    }
+
+    function stopRotate() {
+      isSpinning = false;
+      
+      // Trigger confetti explosion
+      confetti({
+        particleCount: 150,
+        spread: 80,
+        origin: { y: 0.6 },
+        colors: ['#00f2fe', '#ff007f', '#00ff87', '#ffd700']
+      });
+
+      // Show winner banner overlay
+      const overlay = document.getElementById('winOverlay');
+      document.getElementById('winPrizeText').innerText = targetPrize;
+      overlay.classList.add('active');
+
+      // Auto hide wheel after 6 seconds
+      setTimeout(() => {
+        overlay.classList.remove('active');
+        document.getElementById('wheelContainer').classList.remove('visible');
+      }, 6000);
+    }
+  </script>
+</body>
+</html>

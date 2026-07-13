@@ -178,9 +178,22 @@ function processNextAlert() {
   
   // Reload configurations on each alert to ensure color/volume updates apply in real-time
   fetchConfig().then(() => {
-    document.getElementById('donor-name').innerText = alert.name;
+    document.getElementById('donor-name-text').innerText = alert.name;
     document.getElementById('donor-amount').innerText = alert.amount.toFixed(2) + ' THB';
     
+    // Process VIP Badges
+    const badgeEl = document.getElementById('donor-badge');
+    if (badgeEl) {
+      if (alert.viewerBadge && alert.viewerBadge !== 'none') {
+        badgeEl.className = `badge-tag badge-${alert.viewerBadge}`;
+        badgeEl.innerText = `VIP ${alert.viewerBadge}`;
+        badgeEl.style.display = 'inline-block';
+      } else {
+        badgeEl.className = 'badge-tag badge-none';
+        badgeEl.style.display = 'none';
+      }
+    }
+
     const msgEl = document.getElementById('donor-message');
     if (alert.message) {
       msgEl.style.display = 'block';
@@ -192,9 +205,9 @@ function processNextAlert() {
     // Play chime sound
     playAlertSound();
     
-    // Show Card
+    // Show Card (Apply theme class)
     const card = document.getElementById('donation-card');
-    card.className = 'donation-card-active';
+    card.className = 'donation-card-active theme-' + (config.alertTheme || 'classic');
     
     // Reset and animate progress bar
     const progressBar = document.getElementById('progress-bar');

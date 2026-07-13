@@ -5,6 +5,7 @@ let currentName = '';
 let currentMessage = '';
 let config = {};
 let countdownInterval = null;
+let currentViewerId = null;
 
 // QR code renderer instance
 let qrCodeInstance = null;
@@ -13,6 +14,7 @@ let qrCodeInstance = null;
 document.addEventListener('DOMContentLoaded', () => {
   initSocket();
   fetchConfig();
+  checkViewerSession();
   setupEventListeners();
 });
 
@@ -181,7 +183,7 @@ async function handleFormSubmit(e) {
     const response = await fetch('/api/donate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, message, amount, username: targetUsername })
+      body: JSON.stringify({ name, message, amount, username: targetUsername, viewerId: currentViewerId })
     });
 
     const data = await response.json();
@@ -443,4 +445,61 @@ function resetForm() {
   currentMessage = '';
 
   switchStep('step-success', 'step-form');
+}
+
+// Fetch current viewer session, prefill name, and update status banner
+async function checkViewerSession() {
+  try {
+    const response = await fetch('/api/viewer/me?t=' + Date.now());
+    const data = await response.json();
+
+    const statusBar = document.getElementById('viewerStatusBar');
+    const statusText = document.getElementById('viewerStatusText');
+
+    if (data.loggedIn) {
+      currentViewerId = data.viewer.id;
+      
+      // Update status bar
+      const badgeLabel = data.viewer.badgeTier === 'none' ? 'ปกติ (NO VIP)' : `VIP ${data.viewer.badgeTier.toUpperCase()}`;
+      statusText.innerHTML = `👋 ยินดีต้อนรับ คุณ <strong>${escapeHtml(data.viewer.displayName)}</strong> (${badgeLabel}) | ยอดสะสม: <strong style="color: #00ff87;">${data.viewer.totalDonated.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ฿</strong> | <a onclick="handleViewerLogout()" style="color: #ff3366; text-decoration: underline; cursor: pointer; margin-left: 5px;">ออกจากระบบ</a>`;
+      
+      // Prefill donor name field if empty
+      const nameInput = document.getElementById('donorName');
+      if (nameInput && !nameInput.value) {
+        nameInput.value = data.viewer.displayName;
+      }
+    } else {
+      currentViewerId = null;
+      statusText.innerHTML = `👤 ต้องการสะสมแต้มรับยศ VIP หรือไม่? <a href="/viewer-login.html" style="color: #00f2fe; text-decoration: underline;">เข้าสู่ระบบผู้ชมที่นี่</a>`;
+    }
+  } catch (err) {
+    console.error('Failed to check viewer session:', err);
+  }
+}
+
+// Log out viewer session
+async function handleViewerLogout() {
+  try {
+    const response = await fetch('/api/viewer/logout', { method: 'POST' });
+    if (response.ok) {
+      currentViewerId = null;
+      
+      // Clear prefilled name if it matches profile display name
+      const nameInput = document.getElementById('donorName');
+      nameInput.value = '';
+      
+      checkViewerSession();
+    }
+  } catch (err) {
+    console.error('Viewer logout error:', err);
+  }
+}
+
+// Simple HTML escaping helper for status banner
+function escapeHtml(str) {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }

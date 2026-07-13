@@ -3,334 +3,225 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Support Streamer - โดเนทสนับสนุนสตรีมเมอร์</title>
+  <title>DonateHub - แพลตฟอร์มโดเนทสนับสนุนสตรีมเมอร์เต็มรูปแบบ</title>
   <link rel="stylesheet" href="/css/style.css">
   <style>
-    .donate-container {
-      width: 100%;
-      max-width: 500px;
-      text-align: center;
-    }
-    
-    .step-container {
-      display: none;
-    }
-    
-    .step-container.active {
-      display: block;
-      animation: fadeIn 0.4s cubic-bezier(0.165, 0.84, 0.44, 1) forwards;
-    }
-    
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(12px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    
-    /* QR code section */
-    .qr-card {
-      background: rgba(255, 255, 255, 0.025);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: 20px;
-      padding: 24px;
-      margin: 20px 0;
-      width: 100%;
-    }
-    
-    #qrcode {
-      display: inline-block;
-      padding: 12px;
-      background: #fff;
-      border-radius: 16px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-      margin: 16px 0;
-    }
-    
-    #qrcode img {
-      display: block;
-      margin: 0 auto;
-    }
-    
-    .promptpay-header {
+    body {
+      min-height: 100vh;
       display: flex;
+      flex-direction: column;
       justify-content: center;
       align-items: center;
-      gap: 10px;
-      margin-bottom: 8px;
+      background: radial-gradient(circle at top right, #11072a, #070312);
+      color: #fff;
+      font-family: 'Inter', 'Outfit', sans-serif;
+      margin: 0;
+      padding: 20px;
     }
-    
-    .promptpay-header img {
-      height: 24px;
-      border-radius: 4px;
+
+    .landing-card {
+      width: 100%;
+      max-width: 680px;
+      padding: 50px 40px;
+      background: rgba(16, 12, 36, 0.8);
+      border: 1.5px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+      border-radius: 24px;
+      backdrop-filter: blur(15px);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
     }
-    
-    .amount-display {
-      font-size: 34px;
-      font-weight: 700;
-      color: #00ff87;
-      margin-bottom: 6px;
-      text-shadow: 0 0 15px rgba(0, 255, 135, 0.2);
+
+    .landing-card::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle, rgba(138, 43, 226, 0.1) 0%, rgba(0, 242, 254, 0.05) 50%, transparent 70%);
+      pointer-events: none;
+      animation: rotateGlow 20s linear infinite;
     }
-    
-    .amount-display span {
+
+    @keyframes rotateGlow {
+      to { transform: rotate(360deg); }
+    }
+
+    .platform-logo {
+      font-size: 48px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      margin-bottom: 10px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .platform-tagline {
       font-size: 16px;
       color: var(--text-muted);
-      font-weight: 400;
-    }
-    
-    /* Slip upload area */
-    .upload-box {
-      border: 2.5px dashed rgba(255, 255, 255, 0.12);
-      border-radius: 18px;
-      padding: 24px;
-      background: rgba(255, 255, 255, 0.015);
-      cursor: pointer;
-      transition: all 0.3s ease;
-      margin-top: 16px;
+      max-width: 480px;
+      margin: 0 auto 35px auto;
+      line-height: 1.6;
       position: relative;
+      z-index: 1;
     }
-    
-    .upload-box:hover, .upload-box.dragover {
-      border-color: #8a2be2;
-      background: rgba(138, 43, 226, 0.06);
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 40px;
+      text-align: left;
+      position: relative;
+      z-index: 1;
     }
-    
-    .upload-box svg {
-      width: 42px;
-      height: 42px;
-      fill: var(--text-muted);
-      margin-bottom: 10px;
-      transition: all 0.25s ease;
+
+    @media (max-width: 580px) {
+      .features-grid {
+        grid-template-columns: 1fr;
+      }
     }
-    
-    .upload-box:hover svg {
-      fill: #ff007f;
+
+    .feature-item {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 16px;
+      transition: all 0.3s ease;
+    }
+
+    .feature-item:hover {
+      border-color: rgba(0, 242, 254, 0.2);
+      background: rgba(255, 255, 255, 0.04);
       transform: translateY(-2px);
     }
-    
-    .upload-box input {
-      display: none;
+
+    .feature-icon {
+      font-size: 20px;
+      margin-bottom: 8px;
     }
 
-    .slip-preview-container {
-      display: none;
-      margin-top: 14px;
+    .feature-title {
+      font-weight: 700;
+      color: #fff;
+      font-size: 14.5px;
+      margin-bottom: 4px;
+    }
+
+    .feature-desc {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .actions-container {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    @media (max-width: 480px) {
+      .actions-container {
+        flex-direction: column;
+      }
+    }
+
+    .btn-main {
+      padding: 14px 28px;
       border-radius: 12px;
-      overflow: hidden;
-      max-height: 180px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      background: rgba(0,0,0,0.2);
-    }
-    
-    .slip-preview-img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      padding: 10px;
-    }
-    
-    .status-badge {
+      font-weight: 800;
+      font-size: 15px;
+      text-decoration: none;
+      transition: all 0.25s ease;
       display: inline-flex;
       align-items: center;
-      gap: 10px;
-      padding: 8px 18px;
-      border-radius: 20px;
-      font-size: 14px;
-      font-weight: 700;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      margin-top: 16px;
-    }
-    
-    .status-badge.pending {
-      color: #ffaa00;
-      background: rgba(255, 170, 0, 0.1);
-      border-color: rgba(255, 170, 0, 0.18);
-    }
-    
-    .status-badge.loading {
-      color: #00f2fe;
-      background: rgba(0, 242, 254, 0.1);
-      border-color: rgba(0, 242, 254, 0.18);
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
     }
 
-    .countdown-timer {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 6px;
-      font-size: 13px;
-      color: #ff8800;
-      margin-top: 4px;
-      margin-bottom: 12px;
-      font-weight: 600;
+    .btn-streamer {
+      background: var(--primary-gradient);
+      color: #fff;
+      box-shadow: 0 8px 25px rgba(255, 0, 127, 0.25);
     }
-    
-    /* Success card animations */
-    .success-icon {
-      width: 80px;
-      height: 80px;
-      background: var(--success-gradient);
-      border-radius: 50%;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      margin: 10px auto 20px auto;
-      box-shadow: 0 0 20px rgba(0, 255, 135, 0.4);
-      animation: scaleUp 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+
+    .btn-streamer:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 30px rgba(255, 0, 127, 0.4);
     }
-    
-    @keyframes scaleUp {
-      from { transform: scale(0); }
-      to { transform: scale(1); }
+
+    .btn-viewer {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #fff;
     }
-    
-    .success-amount {
-      font-size: 38px;
-      font-weight: 700;
-      color: #00ff87;
-      margin: 14px 0;
+
+    .btn-viewer:hover {
+      background: rgba(255, 255, 255, 0.1);
+      transform: translateY(-2px);
+    }
+
+    .footer-note {
+      margin-top: 40px;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.3);
+      position: relative;
+      z-index: 1;
     }
   </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-  <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 
-  <div class="donate-container">
-    <div class="glass-panel">
+  <div class="landing-card">
+    <h1 class="platform-logo gradient-text">DONATE HUB</h1>
+    <p class="platform-tagline">ระบบรับโดเนทแจ้งเตือนสตรีมมิ่งครบวงจร ด้วยระบบยืนยันสลิปธนาคารอัตโนมัติ 100% พร้อมเครื่องมือยกระดับการมีส่วนร่วมสำหรับผู้ชม</p>
+
+    <div class="features-grid">
+      <div class="feature-item">
+        <div class="feature-icon">🛡️</div>
+        <div class="feature-title">ยืนยันสลิปผ่าน EasySlip API</div>
+        <div class="feature-desc">ระบบตรวจสอบ QR Code บนสลิปธนาคาร ป้องกันการสลิปปลอมหรือการสลิปซ้ำ เพื่อความปลอดภัยขั้นสูง</div>
+      </div>
       
-      <!-- Streamer Banner Container -->
-      <div class="streamer-banner-container">
-        <img id="streamerBanner" src="/streamer_banner.jpg" alt="Streamer Banner" class="streamer-banner-img" onerror="this.src='https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80'">
+      <div class="feature-item" style="border-color: rgba(0, 242, 254, 0.15);">
+        <div class="feature-icon">🎡</div>
+        <div class="feature-title">มินิเกมวงล้อลุ้นโชค (OBS)</div>
+        <div class="feature-desc">เมื่อยอดโดเนทถึงกำหนด ระบบจะหมุนวงล้อให้ของรางวัลบนหน้าจอสตรีมเพื่อเพิ่มความสนุกสนาน</div>
       </div>
 
-      <!-- Streamer Profile Header Card -->
-      <div class="streamer-profile">
-        <div class="streamer-avatar-wrapper">
-          <img src="/streamer_logo.jpg" alt="Streamer Logo" class="streamer-avatar" onerror="this.src='https://cdn-icons-png.flaticon.com/512/847/847969.png'">
-        </div>
-        <div class="streamer-name" id="streamerName">กำลังโหลดชื่อ...</div>
-        <div class="streamer-desc" id="streamerDescription">กำลังโหลดคำอธิบาย...</div>
+      <div class="feature-item" style="border-color: rgba(0, 255, 135, 0.15);">
+        <div class="feature-icon">🏆</div>
+        <div class="feature-title">ตารางผู้สนับสนุน (Leaderboard)</div>
+        <div class="feature-desc">แสดงรายชื่อบอร์ดผู้สนับสนุนอันดับสูงสุด 5 อันดับแรกบน OBS แบบ Real-time ทันที</div>
       </div>
 
-      <!-- STEP 1: Form Fill -->
-      <div id="step-form" class="step-container active">
-        <form id="donateForm">
-          <div class="form-group">
-            <label for="donorName">ชื่อผู้โดเนท (Name)</label>
-            <input type="text" id="donorName" placeholder="ระบุชื่อของคุณ (แสดงบนจอ)" required maxlength="25">
-          </div>
-          
-          <div class="form-group">
-            <label for="donorMessage">ข้อความส่งถึงสตรีมเมอร์ (Message)</label>
-            <div class="textarea-wrapper">
-              <textarea id="donorMessage" placeholder="เขียนข้อความส่งใจ (รองรับไทย/Eng)" rows="3" maxlength="200" oninput="updateCharCounter(this)"></textarea>
-              <span class="char-counter" id="charCounter">0 / 200</span>
-            </div>
-          </div>
-          
-          <div class="form-group">
-            <label for="donateAmount">จำนวนเงินที่สนับสนุน (THB)</label>
-            <div class="amount-presets">
-              <div class="preset-chip" onclick="setPresetAmount(20)">20 ฿</div>
-              <div class="preset-chip" onclick="setPresetAmount(50)">50 ฿</div>
-              <div class="preset-chip" onclick="setPresetAmount(100)">100 ฿</div>
-              <div class="preset-chip" onclick="setPresetAmount(500)">500 ฿</div>
-            </div>
-            <input type="number" id="donateAmount" placeholder="ยอดเงินสนับสนุน" min="1" step="any" required>
-            <small style="color: var(--text-muted); font-size: 12.5px; display:block; margin-top:4px;" id="minDonateText">โอนสนับสนุนขั้นต่ำ 1 บาท</small>
-          </div>
-          
-          <button type="submit" id="btnSubmit">
-            <span>ดำเนินการต่อ</span>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
-          </button>
-        </form>
+      <div class="feature-item">
+        <div class="feature-icon">💎</div>
+        <div class="feature-title">ระบบสะสมแต้ม VIP Viewers</div>
+        <div class="feature-desc">ให้ผู้ชมสมัครสมาชิกเพื่อสะสมยอดบริจาค รับตราสัญลักษณ์ทอง/เงิน/ทองแดง โชว์พ่วงท้ายชื่อเด้งขึ้นหน้าจอ</div>
       </div>
+    </div>
 
-      <!-- STEP 2: QR & Payment Verification -->
-      <div id="step-payment" class="step-container">
-        <h1>สแกนจ่ายเงิน (PromptPay)</h1>
-        
-        <div class="qr-card">
-          <div class="promptpay-header">
-            <img src="https://images.squarespace-cdn.com/content/v1/593796ec725e25287f6311aa/1547781329618-U1Q1NEXD838UCRUPED8W/PromptPay-logo.jpg?format=100w" alt="PromptPay">
-            <span style="font-weight: 700; color: #00f2fe; font-size: 14px; letter-spacing: 1px;">PROMPTPAY</span>
-          </div>
-          
-          <div class="amount-display" id="displayAmount">0.00 <span>THB</span></div>
-          
-          <!-- Countdown Timer -->
-          <div class="countdown-timer" id="countdownTimer">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <polyline points="12 6 12 12 16 14"></polyline>
-            </svg>
-            <span>กรุณาสแกนจ่ายภายใน: <strong id="timerText">10:00</strong></span>
-          </div>
-          
-          <div id="qrcode"></div>
-          
-          <!-- Verification Mode Displays -->
-          <div id="simulate-section" style="display: none;">
-            <button id="btnSimulatePay">ยืนยันการชำระเงิน (จำลอง)</button>
-          </div>
+    <div class="actions-container">
+      <a href="/login.html" class="btn-main btn-streamer">
+        <span>สำหรับสตรีมเมอร์</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+      </a>
+      
+      <a href="/viewer-login.html" class="btn-main btn-viewer">
+        <span>เข้าสู่ระบบผู้ชม (VIP)</span>
+      </a>
+    </div>
 
-          <div id="slip-section" style="display: none;">
-            <p style="font-size: 12.5px; color: var(--text-muted); line-height: 1.4; margin-bottom: 8px;">เมื่อโอนเงินเสร็จเรียบร้อยแล้ว กรุณาอัปโหลดรูปภาพสลิปใบโอนเงินของคุณด้านล่าง เพื่อยืนยันยอดเงินส่งขึ้นหน้าจอทันที</p>
-            <div class="upload-box" id="uploadBox">
-              <svg viewBox="0 0 24 24">
-                <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
-              </svg>
-              <p id="uploadText" style="font-weight: 600;">คลิก หรือ ลากสลิปมาวางที่นี่</p>
-              <p style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">รองรับไฟล์รูปภาพสลิปทุกธนาคาร (มี QR Code)</p>
-              <input type="file" id="slipInput" accept="image/*">
-            </div>
-            
-            <!-- Slip Thumbnail Preview -->
-            <div class="slip-preview-container" id="slipPreviewContainer">
-              <img src="" alt="Slip Preview" class="slip-preview-img" id="slipPreviewImg">
-            </div>
-          </div>
-          
-          <div class="status-badge pending" id="statusBadge">
-            <span class="spinner" id="statusSpinner" style="display:none;"></span>
-            <span id="statusText">รอการชำระเงิน...</span>
-          </div>
-        </div>
-
-        <button type="button" class="mt-4" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); box-shadow: none;" onclick="goBackToForm()">
-          ย้อนกลับไปแก้ไขข้อมูล
-        </button>
-      </div>
-
-      <!-- STEP 3: Success Screen -->
-      <div id="step-success" class="step-container">
-        <div class="success-icon">
-          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#080415" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="20 6 9 17 4 12"></polyline>
-          </svg>
-        </div>
-        <h1 class="gradient-text">โอนเงินสนับสนุนสำเร็จ!</h1>
-        <p style="color: var(--text-muted);">ขอบคุณสำหรับทุกแรงใจในการสนับสนุนสตรีมเมอร์</p>
-        
-        <div class="success-amount" id="successAmount">0.00 THB</div>
-        
-        <div style="background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.04); border-radius: 16px; padding: 20px; margin-bottom: 24px; text-align: left;">
-          <strong id="successName" style="color: #ff007f; font-size: 16px;">ชื่อผู้ส่ง</strong>
-          <p id="successMessage" style="font-size: 14.5px; margin-top: 8px; font-style: italic; color: #d1cde3; line-height: 1.5; word-break: break-word;">"ข้อความ"</p>
-        </div>
-
-        <button onclick="resetForm()">โอนเงินสนับสนุนอีกครั้ง</button>
-      </div>
-
+    <div class="footer-note">
+      © 2026 Donate Hub. All rights reserved. Powered by Antigravity Hybrid Engine.
     </div>
   </div>
 
-  <!-- Offscreen canvas for QR Scanning -->
-  <canvas id="scanCanvas" style="display:none;"></canvas>
-
-  <script src="/js/donate.js"></script>
 </body>
 </html>

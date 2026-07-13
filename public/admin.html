@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/css/admin.css">
   <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
@@ -49,6 +50,10 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
         ประวัติเงินเข้า (Logs)
       </button>
+      <button class="tab-btn" onclick="switchTab('tab-wallet')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+        กระเป๋าเงิน (Wallet)
+      </button>
       <button class="tab-btn" onclick="switchTab('tab-settings')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
         ตั้งค่าระบบ (Settings)
@@ -90,6 +95,24 @@
               <button type="button" onclick="copyWidgetLink('goalWidgetLinkDash')" style="width: auto; padding: 0 15px; font-size: 13px; background: rgba(255,255,255,0.05); box-shadow:none; border: 1px solid rgba(255,255,255,0.1); text-transform:none; font-weight:normal;">คัดลอก</button>
             </div>
           </div>
+
+          <!-- Link 4: Leaderboard Widget -->
+          <div>
+            <label style="color: #ffd700; font-weight:700;">🥇 ลิงก์ตารางผู้สนับสนุนสูงสุด (Leaderboard)</label>
+            <div style="display: flex; gap: 8px; margin-top: 8px;">
+              <input type="text" id="leaderboardWidgetLink" readonly style="background: rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.1); font-size:13px;" value="">
+              <button type="button" onclick="copyWidgetLink('leaderboardWidgetLink')" style="width: auto; padding: 0 15px; font-size: 13px; background: rgba(255,255,255,0.05); box-shadow:none; border: 1px solid rgba(255,255,255,0.1); text-transform:none; font-weight:normal;">คัดลอก</button>
+            </div>
+          </div>
+
+          <!-- Link 5: Wheel Widget -->
+          <div>
+            <label style="color: #ffaa00; font-weight:700;">🎡 ลิงก์วงล้อสุ่มกิจกรรมสตรีมเมอร์ (Wheel Widget)</label>
+            <div style="display: flex; gap: 8px; margin-top: 8px;">
+              <input type="text" id="wheelWidgetLink" readonly style="background: rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.1); font-size:13px;" value="">
+              <button type="button" onclick="copyWidgetLink('wheelWidgetLink')" style="width: auto; padding: 0 15px; font-size: 13px; background: rgba(255,255,255,0.05); box-shadow:none; border: 1px solid rgba(255,255,255,0.1); text-transform:none; font-weight:normal;">คัดลอก</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -105,6 +128,14 @@
         <div class="stat-card" style="border-color: rgba(255, 0, 127, 0.2);">
           <div class="stat-label">จำนวนรอตรวจอนุมัติ</div>
           <div class="stat-val" id="stat-pending-approvals" style="color: #ff007f; text-shadow: 0 0 10px rgba(255, 0, 127, 0.2);">0</div>
+        </div>
+      </div>
+
+      <!-- Earnings Chart Panel -->
+      <div class="glass-panel mb-4" style="width: 100%;">
+        <h2>📈 สถิติรายได้ย้อนหลัง 7 วัน (7-Day Earnings Trend)</h2>
+        <div style="width: 100%; height: 260px; position: relative; margin-top: 15px;">
+          <canvas id="earningsChart"></canvas>
         </div>
       </div>
 
@@ -275,7 +306,80 @@
       </div>
     </div>
 
-    <!-- TAB 5: System Settings & Overlay Customizations -->
+    <!-- TAB 5: Wallet and Payouts -->
+    <div id="tab-wallet" class="tab-content">
+      <div style="display: grid; grid-template-columns: 1fr 1.6fr; gap: 20px; flex-wrap: wrap;">
+        <!-- Payout Request form -->
+        <div class="glass-panel admin-card">
+          <h2>💰 ร้องขอการถอนเงิน</h2>
+          <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 13.5px;">ถอนรายได้สะสมจากกระเป๋าเงินระบบเข้าบัญชี PromptPay ของคุณ</p>
+          
+          <div class="glass-panel mb-4" style="background: rgba(0,255,135,0.08); border-color: rgba(0,255,135,0.2); text-align: center; padding: 20px 10px; width: 100%;">
+            <div style="font-size: 14px; color: var(--text-muted);">ยอดเงินถอนได้คงเหลือ (Balance)</div>
+            <div style="font-size: 32px; font-weight: 800; color: #00ff87; margin-top: 8px;" id="walletBalanceText">0.00 THB</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 5px;">*หักค่าบริการแพลตฟอร์มแล้ว (<span id="walletFeeRateText">2.0</span>%)</div>
+          </div>
+
+          <form id="payoutForm" onsubmit="handleRequestPayout(event)">
+            <div class="form-group">
+              <label for="payoutAmount">จำนวนเงินที่จะถอน (THB)</label>
+              <input type="number" id="payoutAmount" min="1" step="any" placeholder="กรอกจำนวนเงิน" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="payoutPromptpay">เลข PromptPay รับเงิน</label>
+              <input type="text" id="payoutPromptpay" placeholder="เบอร์โทรศัพท์ หรือเลขบัตรประชาชน" required>
+            </div>
+
+            <div class="form-group">
+              <label for="payoutBankName">ชื่อธนาคารปลายทาง (ถ้ามี)</label>
+              <input type="text" id="payoutBankName" placeholder="เช่น กสิกรไทย, ไทยพาณิชย์">
+            </div>
+
+            <div class="form-group">
+              <label for="payoutAccountNumber">เลขบัญชีธนาคาร (ถ้ามี)</label>
+              <input type="text" id="payoutAccountNumber" placeholder="กรอกเลขบัญชีธนาคาร">
+            </div>
+
+            <div class="form-group">
+              <label for="payoutAccountName">ชื่อจริงเจ้าของบัญชี</label>
+              <input type="text" id="payoutAccountName" placeholder="กรอกชื่อ-นามสกุลจริง" required>
+            </div>
+
+            <button type="submit" style="background: var(--primary-gradient); font-weight: 700;">ส่งคำร้องขอถอนเงิน</button>
+          </form>
+        </div>
+
+        <!-- Payout History -->
+        <div class="glass-panel admin-card">
+          <h2>📂 ประวัติการถอนเงิน (Payout History)</h2>
+          <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 13.5px;">ตรวจสอบสถานะคำร้องขอรับเงินจากแพลตฟอร์ม</p>
+          
+          <div class="table-container">
+            <table class="donation-table">
+              <thead>
+                <tr>
+                  <th>วันที่ถอน</th>
+                  <th>ยอดที่ถอน</th>
+                  <th>หักค่าธรรมเนียม</th>
+                  <th>ยอดเงินสุทธิ</th>
+                  <th>สถานะถอน</th>
+                </tr>
+              </thead>
+              <tbody id="payoutTableBody">
+                <tr>
+                  <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 30px;">
+                    ยังไม่มีรายการถอนเงินในระบบ
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 6: System Settings & Overlay Customizations -->
     <div id="tab-settings" class="tab-content">
 
       <!-- Standalone Min Donation Card -->
@@ -353,6 +457,15 @@
               <textarea id="streamerDescription" placeholder="เขียนข้อความทักทายคนดู" rows="2" style="font-family: inherit; resize: vertical;"></textarea>
             </div>
             
+            <!-- Payment Mode select -->
+            <div class="form-group">
+              <label for="paymentMode">โหมดการรับเงินและการถอน (SaaS Payment & Payout Mode)</label>
+              <select id="paymentMode">
+                <option value="direct">โอนเงินตรงเข้าบัญชีสตรีมเมอร์ส่วนตัวทันที (Direct PromptPay - 0% fee)</option>
+                <option value="platform">สะสมยอดเข้ากระเป๋าเงินกลางแพลตฟอร์ม (Platform Balance - หักค่าบริการ 2%)</option>
+              </select>
+            </div>
+
             <!-- Verify Mode select -->
             <div class="form-group">
               <label for="verifyMode">วิธีการตรวจสอบชำระเงิน</label>
@@ -440,6 +553,31 @@
                 <strong>เปิดโหมดคัดกรองข้อความ (Require Moderator Approval Queue)</strong>
               </label>
               <small style="color: var(--text-muted); font-size: 12px; display:block; margin-top:4px;">หากเปิดใช้งาน แจ้งเตือนสแกนเงินสำเร็จจะเข้าคิวรออนุมัติในแท็บ "คิวรออนุมัติ" และยังไม่เด้งขึ้นหน้าจอ OBS จนกว่าสตรีมเมอร์หรือแอดมินจะกดอนุมัติ</small>
+            </div>
+
+            <!-- Alert Theme Select -->
+            <div class="form-group">
+              <label for="alertTheme">เลือกธีมกระดิ่งแจ้งเตือน (Alert Overlay Theme)</label>
+              <select id="alertTheme">
+                <option value="classic">คลาสสิกดั้งเดิม (Classic Neon Card)</option>
+                <option value="gaming">นีออนล้ำอนาคต (Futuristic Gamer Cyber)</option>
+                <option value="minimal">มินิมอลเรียบหรู (Elegant Flat White)</option>
+              </select>
+            </div>
+
+            <!-- Wheel of fortune configs -->
+            <div class="form-group" style="padding: 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; margin-bottom: 15px;">
+              <h4 style="margin-top: 0; color: #00f2fe; margin-bottom: 10px; font-size:13.5px;">🎡 ตั้งค่าวงล้อสุ่มกิจกรรม (Wheel of Fortune Settings)</h4>
+              
+              <div style="margin-bottom: 8px;">
+                <label for="wheelMinAmount" style="font-size: 11.5px;">ยอดโดเนทขั้นต่ำสำหรับหมุนวงล้อ (บาท)</label>
+                <input type="number" id="wheelMinAmount" min="1" placeholder="เช่น 50" style="font-size: 12.5px; height: 34px;">
+              </div>
+              
+              <div>
+                <label for="wheelItems" style="font-size: 11.5px;">รายการของรางวัล (คั่นด้วยเครื่องหมายจุลภาค , )</label>
+                <textarea id="wheelItems" placeholder="รางวัลที่ 1, แจกติ๊กเกอร์, โทษทีโชคหน้า, ได้บัตรฟรี" rows="2" style="font-size: 12px; resize:vertical;"></textarea>
+              </div>
             </div>
 
             <!-- Banned Words list -->
