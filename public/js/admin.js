@@ -30,6 +30,8 @@ async function fetchConfig() {
     document.getElementById('promptpayId').value = config.promptpayId || '';
     document.getElementById('verifyMode').value = config.verifyMode || 'simulate';
     document.getElementById('easyslipApiKey').value = config.easyslipApiKey || '';
+    document.getElementById('streamerName').value = config.streamerName || '';
+    document.getElementById('streamerDescription').value = config.streamerDescription || '';
 
     toggleVerifyFields();
   } catch (error) {
@@ -69,6 +71,8 @@ function setupFormHandlers() {
     const promptpayId = document.getElementById('promptpayId').value.trim();
     const verifyMode = document.getElementById('verifyMode').value;
     const easyslipApiKey = document.getElementById('easyslipApiKey').value.trim();
+    const streamerName = document.getElementById('streamerName').value.trim();
+    const streamerDescription = document.getElementById('streamerDescription').value.trim();
 
     if (!promptpayId) {
       alert('กรุณากรอก PromptPay ID');
@@ -83,7 +87,7 @@ function setupFormHandlers() {
       const response = await fetch('/api/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ promptpayId, verifyMode, easyslipApiKey })
+        body: JSON.stringify({ promptpayId, verifyMode, easyslipApiKey, streamerName, streamerDescription })
       });
 
       await response.json();

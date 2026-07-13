@@ -4,6 +4,7 @@ let currentAmount = 0;
 let currentName = '';
 let currentMessage = '';
 let config = {};
+let countdownInterval = null;
 
 // QR code renderer instance
 let qrCodeInstance = null;
@@ -26,6 +27,7 @@ function initSocket() {
   // Listen for real-time success broadcast
   socket.on('donation-alert', (alertData) => {
     if (currentDonationId && alertData.id === currentDonationId) {
+      if (countdownInterval) clearInterval(countdownInterval);
       showSuccessScreen(alertData);
     }
   });
@@ -36,6 +38,10 @@ async function fetchConfig() {
   try {
     const response = await fetch('/api/config');
     config = await response.json();
+    
+    // Dynamic page branding
+    document.getElementById('streamerName').innerText = config.streamerName || 'SEAHOUSE STREAM';
+    document.getElementById('streamerDescription').innerText = config.streamerDescription || 'ขอบคุณสำหรับการสนับสนุน!';
   } catch (error) {
     console.error('Error fetching config:', error);
   }
@@ -45,6 +51,13 @@ async function fetchConfig() {
 function setupEventListeners() {
   const form = document.getElementById('donateForm');
   form.addEventListener('submit', handleFormSubmit);
+
+  // Clear presets active state if user types custom amount
+  const amountInput = document.getElementById('donateAmount');
+  amountInput.addEventListener('input', () => {
+    const chips = document.querySelectorAll('.preset-chip');
+    chips.forEach(chip => chip.classList.remove('active'));
+  });
 
   // Simulation Mode payment button
   const btnSimulatePay = document.getElementById('btnSimulatePay');
@@ -79,6 +92,26 @@ function setupEventListeners() {
       handleSlipUpload(e.target.files[0]);
     }
   });
+}
+
+// Preset chip helper
+function setPresetAmount(amount) {
+  document.getElementById('donateAmount').value = amount;
+  
+  const chips = document.querySelectorAll('.preset-chip');
+  chips.forEach(chip => {
+    if (parseInt(chip.innerText) === amount) {
+      chip.classList.add('active');
+    } else {
+      chip.classList.remove('active');
+    }
+  });
+}
+
+// Counter helper
+function updateCharCounter(el) {
+  const counter = document.getElementById('charCounter');
+  counter.innerText = `${el.value.length} / 150`;
 }
 
 // Step 1 Form Submission -> Generates PromptPay QR
@@ -134,7 +167,8 @@ function showPaymentStep(qrPayload, amount) {
   
   // Render QR Code
   const qrContainer = document.getElementById('qrcode');
-  qrContainer.innerHTML = ''; // Clear previous
+  qrContainer.innerHTML = '';
+  qrContainer.style.opacity = '1';
   
   qrCodeInstance = new QRCode(qrContainer, {
     text: qrPayload,
@@ -149,7 +183,11 @@ function showPaymentStep(qrPayload, amount) {
   const simulateSec = document.getElementById('simulate-section');
   const slipSec = document.getElementById('slip-section');
   
-  // Refresh config state just in case admin changed it
+  // Hide image preview initially
+  document.getElementById('slipPreviewContainer').style.display = 'none';
+  document.getElementById('slipPreviewImg').src = '';
+  document.getElementById('slipInput').value = ''; // Reset file input
+
   fetchConfig().then(() => {
     if (config.verifyMode === 'simulate') {
       simulateSec.style.display = 'block';
@@ -162,9 +200,39 @@ function showPaymentStep(qrPayload, amount) {
 
   // Reset status badge
   updateStatusBadge('pending', 'รอการชำระเงิน...');
+  
+  // Start countdown timer
+  startPaymentCountdown();
 
   // Swap tabs
   switchStep('step-form', 'step-payment');
+}
+
+// 10-Minute payment countdown timer
+function startPaymentCountdown() {
+  if (countdownInterval) clearInterval(countdownInterval);
+  
+  let timeLeft = 600; // 10 minutes in seconds
+  const timerText = document.getElementById('timerText');
+  const countdownTimer = document.getElementById('countdownTimer');
+  
+  countdownTimer.style.display = 'flex';
+  
+  const updateTimer = () => {
+    const minutes = Math.floor(timeLeft / 60);
+    const seconds = timeLeft % 60;
+    timerText.innerText = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    
+    if (timeLeft <= 0) {
+      clearInterval(countdownInterval);
+      updateStatusBadge('pending', 'QR Code หมดอายุแล้ว กรุณากดย้อนกลับเพื่อสร้างใหม่');
+      document.getElementById('qrcode').style.opacity = '0.25';
+    }
+    timeLeft--;
+  };
+  
+  updateTimer();
+  countdownInterval = setInterval(updateTimer, 1000);
 }
 
 // Switch step containers
@@ -175,6 +243,7 @@ function switchStep(fromId, toId) {
 
 // Return to edit details
 function goBackToForm() {
+  if (countdownInterval) clearInterval(countdownInterval);
   document.getElementById('btnSubmit').disabled = false;
   document.getElementById('btnSubmit').innerHTML = '<span>ดำเนินการต่อ</span>';
   switchStep('step-payment', 'step-form');
@@ -221,6 +290,13 @@ function handleSlipUpload(file) {
 
   const reader = new FileReader();
   reader.onload = (e) => {
+    // Show thumbnail preview of the uploaded slip
+    const previewContainer = document.getElementById('slipPreviewContainer');
+    const previewImg = document.getElementById('slipPreviewImg');
+    
+    previewImg.src = e.target.result;
+    previewContainer.style.display = 'block';
+    
     const img = new Image();
     img.onload = () => {
       // Decode QR Code
@@ -234,7 +310,6 @@ function handleSlipUpload(file) {
       const code = jsQR(imageData.data, imageData.width, imageData.height);
 
       if (code) {
-        // QR Code Found, verify payload
         console.log('Slip QR Code Payload Found:', code.data);
         verifySlipOnServer(code.data);
       } else {
@@ -247,7 +322,7 @@ function handleSlipUpload(file) {
   reader.readAsDataURL(file);
 }
 
-// Verify QR string with Server -> SlipOK
+// Verify QR string with Server -> EasySlip
 async function verifySlipOnServer(qrData) {
   updateStatusBadge('loading', 'กำลังตรวจสอบสลิปกับระบบธนาคาร...');
   
@@ -264,7 +339,7 @@ async function verifySlipOnServer(qrData) {
     const data = await response.json();
     
     if (data.success) {
-      // The WebSocket event will also trigger success, but we trigger it here just in case
+      if (countdownInterval) clearInterval(countdownInterval);
       showSuccessScreen(data.donation);
     } else {
       updateStatusBadge('pending', 'ตรวจสอบล้มเหลว');
@@ -295,6 +370,7 @@ function updateStatusBadge(state, text) {
 
 // Transition to Step 3 (Success)
 function showSuccessScreen(donationData) {
+  if (countdownInterval) clearInterval(countdownInterval);
   document.getElementById('successAmount').innerText = donationData.amount.toFixed(2) + ' THB';
   document.getElementById('successName').innerText = donationData.name;
   document.getElementById('successMessage').innerText = donationData.message ? `"${donationData.message}"` : '';
@@ -307,6 +383,13 @@ function resetForm() {
   document.getElementById('donateForm').reset();
   document.getElementById('btnSubmit').disabled = false;
   document.getElementById('btnSubmit').innerHTML = '<span>ดำเนินการต่อ</span>';
+  
+  // Clear presets active state
+  const chips = document.querySelectorAll('.preset-chip');
+  chips.forEach(chip => chip.classList.remove('active'));
+  
+  // Clear char counter text
+  document.getElementById('charCounter').innerText = '0 / 150';
   
   currentDonationId = null;
   currentAmount = 0;

@@ -26,9 +26,11 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Helper to load configurations (Supports Environment Variables for Cloud Deployment)
 function loadConfig() {
   const defaults = {
-    promptpayId: process.env.PROMPTPAY_ID || '0812345678', 
-    verifyMode: process.env.VERIFY_MODE || 'simulate',    
-    easyslipApiKey: process.env.EASYSLIP_API_KEY || ''     
+    promptpayId: '0812345678', 
+    verifyMode: 'simulate',    
+    easyslipApiKey: '',
+    streamerName: 'SEAHOUSE STREAM', // Default streamer name
+    streamerDescription: 'ขอบคุณทุกแรงสนับสนุนสำหรับการพัฒนาช่องและคอมมูนิตี้ของเราครับ!' // Default greeting
   };
 
   if (!fs.existsSync(CONFIG_PATH)) {
@@ -43,7 +45,9 @@ function loadConfig() {
     return {
       promptpayId: diskConfig.promptpayId || process.env.PROMPTPAY_ID || defaults.promptpayId,
       verifyMode: diskConfig.verifyMode || process.env.VERIFY_MODE || defaults.verifyMode,
-      easyslipApiKey: diskConfig.easyslipApiKey || process.env.EASYSLIP_API_KEY || defaults.easyslipApiKey
+      easyslipApiKey: diskConfig.easyslipApiKey || process.env.EASYSLIP_API_KEY || defaults.easyslipApiKey,
+      streamerName: diskConfig.streamerName || process.env.STREAMER_NAME || defaults.streamerName,
+      streamerDescription: diskConfig.streamerDescription || process.env.STREAMER_DESC || defaults.streamerDescription
     };
   } catch (err) {
     console.error('Error reading config.json, using defaults', err);
@@ -127,11 +131,11 @@ app.get('/api/config', (req, res) => {
 });
 
 app.post('/api/config', (req, res) => {
-  const { promptpayId, verifyMode, easyslipApiKey } = req.body;
+  const { promptpayId, verifyMode, easyslipApiKey, streamerName, streamerDescription } = req.body;
   if (!promptpayId) {
     return res.status(400).json({ error: 'PromptPay ID is required' });
   }
-  const config = { promptpayId, verifyMode, easyslipApiKey };
+  const config = { promptpayId, verifyMode, easyslipApiKey, streamerName, streamerDescription };
   saveConfig(config);
   res.json({ message: 'Configuration saved successfully', config });
 });
