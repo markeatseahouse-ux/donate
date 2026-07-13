@@ -31,7 +31,7 @@ function loadConfig() {
     easyslipApiKey: '',
     streamerName: 'SEAHOUSE STREAM',
     streamerDescription: 'ขอบคุณทุกแรงสนับสนุนสำหรับการพัฒนาช่องและคอมมูนิตี้ของเราครับ!',
-    bannedWords: 'ควย,สัส,เหี้ย,มึง,กู,เย็ด,อม,จู๋,หี,แตด,ชิบหาย,ฟาย,shyt,darn,fck', // Default word filters
+    bannedWords: 'ควย,สัส,เหี้ย,มึง,เย็ด,จู๋,หี,แตด,ชิบหาย,ฟาย,shyt,darn,fck', // Removed "อม" and "กู" from defaults to prevent false matches
     requireApproval: false,
     minAmountTts: 1,
     ttsSpeed: 1.0,
@@ -108,18 +108,55 @@ function saveDonations(donations) {
   fs.writeFileSync(DONATIONS_PATH, JSON.stringify(donations, null, 2));
 }
 
-// Profanity filter utility
+// Advanced Profanity filter with safe-words check for Thai compatibility
 function filterProfanity(text, bannedWordsStr) {
   if (!text) return '';
   if (!bannedWordsStr) return text;
   
+  // List of common safe Thai words containing substrings like "อม", "กู", "หี"
+  const safeWords = [
+    "ยอม", "หอม", "ผอม", "ซ่อม", "ปลอม", "พร้อม", "ออม", "จอม", "ถนอม", "มอม", 
+    "คอม", "ซ้อม", "ตรอม", "กลม", "หีบ", "กูรู", "กูเกิล", "กูเกิ้ล", "กระดูก", 
+    "ฤดู", "ชมพู", "กู๊ด", "ปฐม", "พะยอม", "ถนอม", "ล้อม", "ส้อม", "ออมสิน"
+  ];
+  
   const words = bannedWordsStr.split(',').map(w => w.trim()).filter(w => w.length > 0);
   let filtered = text;
+  
   for (const word of words) {
-    // Escape regex characters
-    const escapedWord = word.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-    const regex = new RegExp(escapedWord, 'gi');
-    filtered = filtered.replace(regex, '*'.repeat(word.length));
+    if (word.length === 0) continue;
+    
+    const isEnglish = /^[A-Za-z0-9\s]+$/.test(word);
+    let regex;
+    if (isEnglish) {
+      const escapedWord = word.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      regex = new RegExp('\\b' + escapedWord + '\\b', 'gi');
+    } else {
+      const escapedWord = word.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      regex = new RegExp(escapedWord, 'gi');
+    }
+    
+    filtered = filtered.replace(regex, (match, offset) => {
+      // Check surrounding context of the match to verify it isn't part of a safe word
+      const startContext = Math.max(0, offset - 5);
+      const endContext = Math.min(text.length, offset + match.length + 5);
+      const contextText = text.substring(startContext, endContext);
+      
+      for (const safe of safeWords) {
+        if (contextText.includes(safe)) {
+          const matchInContextIndex = offset - startContext;
+          const safeInContextIndex = contextText.indexOf(safe);
+          
+          // If the match falls entirely within a safe word, skip replacement
+          if (safeInContextIndex !== -1 && 
+              matchInContextIndex >= safeInContextIndex && 
+              (matchInContextIndex + match.length) <= (safeInContextIndex + safe.length)) {
+            return match; // Keep the original string
+          }
+        }
+      }
+      return '*'.repeat(match.length);
+    });
   }
   return filtered;
 }
