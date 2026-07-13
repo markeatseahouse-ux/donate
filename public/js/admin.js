@@ -105,7 +105,7 @@ window.updateRangeText = function(spanId, value) {
 // Fetch current configurations
 async function fetchConfig() {
   try {
-    const response = await fetch('/api/config');
+    const response = await fetch('/api/config?t=' + Date.now());
     currentConfig = await response.json();
 
     // Populate Settings form

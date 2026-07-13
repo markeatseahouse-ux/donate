@@ -36,7 +36,7 @@ function initSocket() {
 // Fetch current system configuration
 async function fetchConfig() {
   try {
-    const response = await fetch('/api/config');
+    const response = await fetch('/api/config?t=' + Date.now());
     config = await response.json();
     
     // Dynamic page branding
